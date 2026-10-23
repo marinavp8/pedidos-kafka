@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light}html{-webkit-text-size-adjust:100%}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Kafka en Microservicios</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* Concepto: cuaderno de laboratorio sobre el log de Kafka. Rejilla fría, tinta azul marino,
+   particiones con color propio, y un ámbar reservado para lo que se compensa. */
+:root{
+  --bg:#EDF0F5; --surface:#FFFFFF; --surface2:#F4F6FA; --line:#D3DAE6; --fg:#0E1A2B; --muted:#55627A;
+  --accent:#2B5BE8; --accent-soft:#DCE5FD; --on-accent:#FFFFFF;
+  --ok:#0B8F63; --ok-soft:#D6F2E7; --warn:#B86E00; --warn-soft:#FBEACB; --bad:#C92F2F; --bad-soft:#FADADA;
+  --p0:#2B5BE8; --p1:#0E9F6E; --p2:#D9822B; --p3:#A848D1; --p4:#D9467A; --p5:#0E93B0; --on-p:#FFFFFF;
+  --f-display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+  --f-body:'Instrument Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0A1220; --surface:#111C30; --surface2:#16243B; --line:#26354F; --fg:#E6ECF7; --muted:#97A5BF;
+    --accent:#7C9BFF; --accent-soft:#1D2D57; --on-accent:#08101D;
+    --ok:#3FD3A0; --ok-soft:#10382F; --warn:#FFB057; --warn-soft:#3A2A10; --bad:#FF7B7B; --bad-soft:#3E1A1F;
+    --p0:#7C9BFF; --p1:#3FD3A0; --p2:#FFB057; --p3:#D58BF2; --p4:#FF7FA9; --p5:#4CCBE6; --on-p:#08101D;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0A1220; --surface:#111C30; --surface2:#16243B; --line:#26354F; --fg:#E6ECF7; --muted:#97A5BF;
+  --accent:#7C9BFF; --accent-soft:#1D2D57; --on-accent:#08101D;
+  --ok:#3FD3A0; --ok-soft:#10382F; --warn:#FFB057; --warn-soft:#3A2A10; --bad:#FF7B7B; --bad-soft:#3E1A1F;
+  --p0:#7C9BFF; --p1:#3FD3A0; --p2:#FFB057; --p3:#D58BF2; --p4:#FF7FA9; --p5:#4CCBE6; --on-p:#08101D;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.55;
+  padding-block:0 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:1120px;margin:0 auto}
+h1,h2,h3{font-family:var(--f-display);margin:0;text-wrap:balance;letter-spacing:-.015em}
+p{margin:0}
+code,.mono{font-family:var(--f-mono);font-size:.92em}
+button,select,input{font-family:inherit}
+
+/* Cabecera */
+.hero{padding:44px 0 26px;display:grid;gap:18px}
+.eyebrow{font:500 12px var(--f-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--accent)}
+h1{font-weight:800;font-size:clamp(36px,6.4vw,64px);line-height:1.02}
+.lead{max-width:64ch;color:var(--muted);font-size:17px}
+.ribbon{display:flex;gap:4px;overflow:hidden;padding-top:6px;
+}
+.rc{flex:0 0 auto;width:38px;display:grid;gap:3px;justify-items:center}
+.rc i{display:block;width:38px;height:38px;border-radius:7px;background:var(--c)}
+.rc b{font:500 10px var(--f-mono);color:var(--muted)}
+.rc.nx i{background:transparent;border:1.5px dashed var(--muted);animation:blink 1.6s ease-in-out infinite}
+
+/* Navegación */
+.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--bg);padding:10px 0;border-bottom:1px solid var(--line)}
+.tablist{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.tablist::-webkit-scrollbar{display:none}
+.tab{flex:0 0 auto;display:flex;align-items:baseline;gap:8px;padding:9px 14px;border-radius:9px;border:1px solid transparent;background:transparent;color:var(--muted);font:600 14px var(--f-body);cursor:pointer;white-space:nowrap}
+.tab span{font:500 11px var(--f-mono);opacity:.75}
+.tab:hover{color:var(--fg)}
+.tab[aria-selected="true"]{background:var(--fg);color:var(--bg)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Paneles */
+.panel{padding-top:30px;display:grid;gap:26px}
+.sec-head{display:grid;gap:8px;max-width:72ch}
+h2{font-size:clamp(26px,4vw,38px);font-weight:800;line-height:1.08}
+.sec-head p{color:var(--muted);font-size:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:grid;gap:16px;min-width:0}
+.card h3{font-size:18px;font-weight:700}
+.sub{font:500 12px var(--f-mono);color:var(--muted)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{font:600 13px var(--f-body);padding:8px 13px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.bad{color:var(--bad)}
+.field{display:grid;gap:4px}
+.field label{font:500 11.5px var(--f-mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+select{padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font-size:14px;min-width:0}
+.note{font-size:13.5px;color:var(--muted);padding:10px 12px;border-radius:9px;background:var(--surface2);border:1px solid var(--line)}
+.note b{color:var(--fg)}
+.defs{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:24px 30px}
+.def{border-top:2px solid var(--fg);padding-top:10px;display:grid;gap:4px;align-content:start}
+.def h3{font-size:17px;font-weight:700}
+.def p{color:var(--muted);font-size:14.5px}
+.scroll{overflow-x:auto}
+
+/* Clúster */
+.brokers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.broker{border:1px solid var(--line);border-radius:12px;background:var(--surface2);padding:14px;display:grid;gap:10px;align-content:start;transition:opacity .3s}
+.broker.down{opacity:.6;border-style:dashed}
+.bhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bname{font:700 14px var(--f-mono)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:0 0 auto}
+.down .dot{background:var(--bad)}
+.badge{font:700 10.5px var(--f-mono);letter-spacing:.03em;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent)}
+.badge.ok{background:var(--ok-soft);color:var(--ok)} .badge.warn{background:var(--warn-soft);color:var(--warn)} .badge.bad{background:var(--bad-soft);color:var(--bad)}
+.rep{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--pc);font:500 12.5px var(--f-mono);transition:background .3s}
+.rep.leader{background:var(--pc);color:var(--on-p)}
+.rep.out{border-style:dashed;opacity:.55}
+.ptable{width:100%;border-collapse:collapse;font-size:13.5px;min-width:520px}
+.ptable th{text-align:left;font:500 11.5px var(--f-mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:6px 10px;border-bottom:1px solid var(--line)}
+.ptable td{padding:9px 10px;border-bottom:1px solid var(--line);font-family:var(--f-mono);font-size:13px}
+.pk{display:inline-block;width:9px;height:9px;border-radius:3px;background:var(--pc);margin-right:7px}
+
+/* Topics y particiones */
+.mapline{font:500 13.5px var(--f-mono);padding:10px 12px;border-radius:9px;background:var(--surface2);border:1px solid var(--line);overflow-wrap:anywhere}
+.plog{display:grid;grid-template-columns:40px minmax(0,1fr);gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.plabel{font:700 14px var(--f-mono);color:var(--fg);padding-top:9px}
+.cells{display:flex;gap:4px;overflow-x:auto;padding-bottom:4px}
+.cell{flex:0 0 auto;width:40px;display:grid;gap:3px;justify-items:center;align-content:start}
+.cbox{width:40px;height:40px;border-radius:7px;display:grid;place-items:center;font:700 12px var(--f-mono);color:var(--on-p);background:var(--kc,var(--muted))}
+.coff{font:500 10px var(--f-mono);color:var(--muted)}
+.cmark{min-height:16px;display:flex;gap:2px}
+.mk{font:700 10px var(--f-mono);padding:1px 5px;border-radius:4px;background:var(--fg);color:var(--bg)}
+.mk.b{background:var(--accent);color:var(--on-accent)}
+.cell.nx .cbox{background:transparent;border:1.5px dashed var(--muted);color:var(--muted)}
+.cell.gap .cbox{background:var(--surface2);color:var(--muted);border:1px solid var(--line)}
+.cell.fresh .cbox{animation:pop .5s ease-out}
+.keys{display:flex;gap:10px;flex-wrap:wrap;font:500 12px var(--f-mono);color:var(--muted)}
+.keys i{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--kc);margin-right:6px;vertical-align:-1px}
+.groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px}
+.grp{border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:12px;background:var(--surface);min-width:0}
+.ghead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.gname{font:700 13.5px var(--f-mono)}
+.stepper{display:inline-flex;align-items:center;gap:8px;font:600 13px var(--f-mono)}
+.stepper .btn{padding:4px 10px}
+.cons{display:grid;gap:6px}
+.con{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:8px;background:var(--surface2);font:500 12.5px var(--f-mono);flex-wrap:wrap}
+.con.idle{opacity:.55}
+.lagbar{font:500 12.5px var(--f-mono);color:var(--muted)}
+.lagbar b{color:var(--fg)}
+
+/* Diagrama de microservicios */
+.diagram{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow-x:auto}
+.diagram svg{display:block;min-width:820px;width:100%;height:auto}
+.nd{fill:var(--surface2);stroke:var(--line);stroke-width:1.5}
+.nd.orch{fill:var(--accent-soft);stroke:var(--accent)}
+.nd.bus{fill:var(--surface2);stroke:var(--fg);stroke-width:1.5;stroke-dasharray:none}
+.nd.tpill{fill:var(--surface);stroke:var(--muted)}
+.nd.resp{fill:var(--accent-soft);stroke:var(--accent)}
+.t1{font:600 14px var(--f-body);fill:var(--fg)}
+.t2{font:500 11px var(--f-mono);fill:var(--muted)}
+.t3{font:500 11.5px var(--f-mono);fill:var(--fg)}
+.ar{fill:none;stroke:var(--muted);stroke-width:1.6;marker-end:url(#ah)}
+.ar.dash{stroke-dasharray:5 4}
+.el{opacity:.38;transition:opacity .25s}
+.el.act{opacity:1}
+.el.act .nd{stroke:var(--accent);stroke-width:2.2}
+.el.act .ar{stroke:var(--accent);marker-end:url(#ahA)}
+.node{cursor:pointer}
+.node.sel .nd{stroke-width:3.2}
+.node:focus-visible{outline:none}
+.node:focus-visible .nd{stroke:var(--accent);stroke-width:3.2}
+.flow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px}
+.steps{display:flex;gap:6px;flex-wrap:wrap}
+.sbtn{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--muted);font:700 13px var(--f-mono);cursor:pointer}
+.sbtn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.cap{font-size:15px;min-height:68px}
+.cap b{font-family:var(--f-mono);font-size:.92em}
+.info dl{margin:0;display:grid;gap:8px}
+.info dt{font:500 11px var(--f-mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.info dd{margin:0;font-size:14.5px;overflow-wrap:anywhere}
+.cmptbl{width:100%;border-collapse:collapse;min-width:560px;font-size:14px}
+.cmptbl th,.cmptbl td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.cmptbl th{font:700 13px var(--f-display);background:var(--surface2)}
+.cmptbl td:first-child{font-weight:600;white-space:nowrap}
+
+/* Sagas */
+.saga{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
+.stlist{display:grid;gap:8px}
+.st{display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;align-items:start;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);transition:border-color .25s}
+.st.run{border-color:var(--accent)} .st.fail{border-color:var(--bad)} .st.crun{border-color:var(--warn)}
+.idx{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:700 13px var(--f-mono);background:var(--surface2);color:var(--muted);border:1px solid var(--line)}
+.st.run .idx{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.st.done .idx{background:var(--ok);color:var(--bg);border-color:var(--ok)}
+.st.fail .idx{background:var(--bad);color:var(--bg);border-color:var(--bad)}
+.st.crun .idx,.st.rev .idx{background:var(--warn);color:var(--bg);border-color:var(--warn)}
+.sname{font-weight:600;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.sname small{font:500 11.5px var(--f-mono);color:var(--muted)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.chip{font:600 11.5px var(--f-mono);padding:3px 9px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.chip.run{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.chip.ok{border-color:var(--ok);color:var(--ok);background:var(--ok-soft)}
+.chip.fail{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}
+.chip.cmp{border-color:var(--warn);color:var(--warn);background:var(--warn-soft)}
+.chip.pulse{animation:blink 1s ease-in-out infinite}
+.state{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pill{font:700 12.5px var(--f-mono);padding:5px 11px;border-radius:99px;background:var(--surface2);border:1px solid var(--line)}
+.pill.run{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.pill.ok{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.pill.cmp{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
+.log{display:grid;gap:6px;max-height:400px;overflow:auto;font:500 12.5px var(--f-mono)}
+.le{display:grid;gap:2px;padding:7px 10px;border-radius:8px;background:var(--surface2);border-left:3px solid var(--accent)}
+.le.reply{border-left-color:var(--ok)} .le.fail{border-left-color:var(--bad);background:var(--bad-soft)} .le.comp{border-left-color:var(--warn)}
+.le .w{color:var(--muted);font-size:11.5px}
+.le .m{overflow-wrap:anywhere}
+.le .m b{font-weight:700}
+.banner{padding:12px 14px;border-radius:10px;font-size:14.5px;border:1px solid var(--line)}
+.banner.ok{background:var(--ok-soft);border-color:var(--ok)} .banner.bad{background:var(--bad-soft);border-color:var(--bad)}
+.empty{color:var(--muted);font-size:14px}
+
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes pop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:860px){.flow,.saga{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:720px){.brokers{grid-template-columns:minmax(0,1fr)}.hero{padding-top:30px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+  <div class="eyebrow">Guía interactiva · Apache Kafka</div>
+  <h1>Kafka en microservicios</h1>
+  <p class="lead">Cuatro laboratorios para explicarlo en directo: cómo se organiza un clúster, cómo se reparten los mensajes en particiones, cómo se conecta una arquitectura de microservicios y cómo una saga deshace lo hecho cuando algo falla.</p>
+  <div class="ribbon" id="ribbon" aria-hidden="true"></div>
+</header>
+
+<nav class="tabs" aria-label="Secciones">
+  <div class="tablist" role="tablist">
+    <button class="tab" role="tab" data-t="cluster" aria-selected="true"><span>01</span>Clúster</button>
+    <button class="tab" role="tab" data-t="topics" aria-selected="false"><span>02</span>Topics y particiones</button>
+    <button class="tab" role="tab" data-t="servicios" aria-selected="false"><span>03</span>Microservicios</button>
+    <button class="tab" role="tab" data-t="sagas" aria-selected="false"><span>04</span>Sagas</button>
+  </div>
+</nav>
+
+<!-- ============ 1. CLÚSTER ============ -->
+<section class="panel" id="cluster" role="tabpanel">
+  <div class="sec-head">
+    <h2>El clúster: brokers, controller y réplicas</h2>
+    <p>Un clúster Kafka es un conjunto de brokers. Cada partición de un topic vive en varios brokers: uno hace de líder y el resto copian. Apaga brokers y mira quién toma el relevo.</p>
+  </div>
+
+  <div class="card">
+    <div class="toolbar" id="clusterBtns">
+      <button class="btn bad" data-b="1">Detener broker-1</button>
+      <button class="btn bad" data-b="2">Detener broker-2</button>
+      <button class="btn bad" data-b="3">Detener broker-3</button>
+      <button class="btn" data-act="prefer">Reequilibrar líderes</button>
+      <button class="btn" data-act="reset">Reiniciar</button>
+    </div>
+    <div class="brokers" id="brokers"></div>
+    <div class="note" id="clusterMsg"></div>
+    <div class="scroll">
+      <table class="ptable">
+        <thead><tr><th>Partición</th><th>Réplicas</th><th>Líder</th><th>ISR</th><th>Estado</th></tr></thead>
+        <tbody id="ptbody"></tbody>
+      </table>
+    </div>
+    <div class="sub">topic <b>pedidos</b> · 3 particiones · replication.factor=3 · min.insync.replicas=2 · acks=all</div>
+    <div class="note"><b>Nota.</b> Líder y seguidores guardan el mismo log, con los mismos mensajes y offsets, pero no siempre al mismo instante. Los seguidores copian del líder y pueden ir un poco por detrás. Lo que importa es que, con <code>acks=all</code>, un mensaje solo se confirma cuando todo el ISR lo tiene. Por eso cualquier réplica del ISR puede ser líder sin perder mensajes confirmados. Una réplica fuera del ISR puede estar incompleta.</div>
+  </div>
+
+  <div class="defs">
+    <div class="def"><h3>Broker</h3><p>Un servidor Kafka. Guarda en disco los segmentos de log de las particiones que le tocan y atiende a productores y consumidores.</p></div>
+    <div class="def"><h3>Controller (KRaft)</h3><p>Un broker del quórum de control mantiene los metadatos del clúster y elige nuevos líderes cuando uno cae. Desde Kafka 4.0 solo existe KRaft: ya no hace falta ZooKeeper.</p></div>
+    <div class="def"><h3>Líder y seguidores</h3><p>Todas las escrituras y lecturas de una partición pasan por su líder. Los seguidores replican el log y están listos para sustituirlo.</p></div>
+    <div class="def"><h3>ISR</h3><p>Conjunto de réplicas sincronizadas con el líder. Solo una réplica del ISR puede ser elegida líder sin perder mensajes confirmados.</p></div>
+    <div class="def"><h3>acks y min.insync.replicas</h3><p>Con <code>acks=all</code> el líder confirma cuando todo el ISR tiene el mensaje. Si el ISR baja de <code>min.insync.replicas</code>, la partición rechaza escrituras en vez de arriesgar datos.</p></div>
+    <div class="def"><h3>Factor de replicación</h3><p>Cuántas copias existen de cada partición. Con 3, el clúster tolera la caída de 2 brokers para leer y de 1 para escribir con acks=all.</p></div>
+  </div>
+</section>
+
+<!-- ============ 2. TOPICS ============ -->
+<section class="panel" id="topics" role="tabpanel" hidden>
+  <div class="sec-head">
+    <h2>Topics y particiones</h2>
+    <p>Un topic es un log dividido en particiones. La clave del mensaje decide la partición, y dentro de una partición el orden está garantizado. Produce mensajes y observa cómo los leen dos grupos de consumidores a la vez.</p>
+  </div>
+
+  <div class="card">
+    <div class="toolbar" style="align-items:end">
+      <div class="field"><label for="selN">Particiones</label>
+        <select id="selN"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option></select></div>
+      <div class="field"><label for="selKey">Clave del mensaje</label>
+        <select id="selKey"></select></div>
+      <button class="btn primary" id="bProd">Producir mensaje</button>
+      <button class="btn" id="bBurst">Ráfaga de 10 con claves al azar</button>
+      <button class="btn" id="bClear">Vaciar topic</button>
+    </div>
+    <div class="mapline" id="mapline"></div>
+    <div id="plogs"></div>
+    <div class="keys" id="keysLegend"></div>
+    <div class="sub">El número bajo cada celda es el offset. Las marcas F y A señalan el siguiente offset que leerá cada grupo.</div>
+  </div>
+
+  <div class="groups" id="groups"></div>
+  <div class="note"><b>Nota.</b> Dentro de un grupo, cada partición la lee un solo consumidor, y un consumidor puede leer varias. Con más consumidores que particiones, los sobrantes quedan inactivos, así que las particiones fijan el paralelismo máximo del grupo. Grupos distintos leen las mismas particiones a la vez, cada uno con sus propios offsets.</div>
+
+  <div class="defs">
+    <div class="def"><h3>Offset</h3><p>Posición de un mensaje dentro de su partición. Crece sin parar y no se reutiliza. Cada grupo guarda hasta qué offset ha leído.</p></div>
+    <div class="def"><h3>Clave y orden</h3><p>Misma clave, misma partición, mismo orden. Entre particiones distintas no hay orden global. Por eso se usa el identificador del agregado, por ejemplo <code>pedidoId</code>, como clave.</p></div>
+    <div class="def"><h3>Grupo de consumidores</h3><p>Cada partición se asigna a un solo consumidor del grupo. Más consumidores que particiones dejan consumidores ocupando sitio sin trabajo. Grupos distintos leen el mismo topic sin molestarse.</p></div>
+    <div class="def"><h3>Lag</h3><p>Diferencia entre el último offset escrito y el último leído por el grupo. Es la métrica que más se vigila: si crece, los consumidores no dan abasto.</p></div>
+    <div class="def"><h3>Retención</h3><p>Kafka no borra al leer. Conserva los mensajes por tiempo o tamaño (<code>retention.ms</code>), o solo el último valor por clave con compactación. Por eso un servicio nuevo puede releer la historia.</p></div>
+    <div class="def"><h3>Rebalanceo</h3><p>Cuando entra o sale un consumidor, el grupo reparte de nuevo las particiones. Los offsets confirmados se conservan y cada consumidor continúa donde se quedó el anterior.</p></div>
+  </div>
+</section>
+
+<!-- ============ 3. MICROSERVICIOS ============ -->
+<section class="panel" id="servicios" role="tabpanel" hidden>
+  <div class="sec-head">
+    <h2>Microservicios con un orquestador</h2>
+    <p>Cada servicio tiene su base de datos y habla con los demás solo a través de Kafka. Un orquestador conoce el flujo completo, envía comandos y reacciona a las respuestas. Recorre el flujo feliz paso a paso y pulsa cualquier componente para ver qué consume y qué publica.</p>
+  </div>
+
+  <div class="card">
+    <div class="toolbar">
+      <div class="steps" id="steps"></div>
+      <button class="btn" id="sPrev">Anterior</button>
+      <button class="btn primary" id="sNext">Siguiente</button>
+    </div>
+    <div class="cap" id="cap"></div>
+    <div class="diagram">
+<svg viewBox="0 0 960 500" role="img" aria-label="Arquitectura de microservicios con orquestador y clúster Kafka" id="arch">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker>
+    <marker id="ahA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker>
+  </defs>
+
+  <!-- Clúster Kafka -->
+  <g class="el node" data-s="1,2,3,4,5,6" data-node="kafka" tabindex="0" role="button" aria-label="Clúster Kafka">
+    <rect class="nd bus" x="20" y="200" width="920" height="100" rx="16"/>
+    <text class="t2" x="36" y="221">CLÚSTER KAFKA · 3 BROKERS</text>
+  </g>
+  <g class="el" data-s="3,4,5"><rect class="nd resp" x="600" y="212" width="210" height="26" rx="13"/><text class="t3" x="705" y="229" text-anchor="middle">saga.respuestas</text></g>
+  <g class="el" data-s="2"><rect class="nd tpill" x="40" y="256" width="190" height="26" rx="13"/><text class="t3" x="135" y="273" text-anchor="middle">inventario.comandos</text></g>
+  <g class="el" data-s="4"><rect class="nd tpill" x="270" y="256" width="190" height="26" rx="13"/><text class="t3" x="365" y="273" text-anchor="middle">pagos.comandos</text></g>
+  <g class="el" data-s="5"><rect class="nd tpill" x="500" y="256" width="190" height="26" rx="13"/><text class="t3" x="595" y="273" text-anchor="middle">envios.comandos</text></g>
+  <g class="el" data-s="1,2,6"><rect class="nd tpill" x="730" y="256" width="190" height="26" rx="13"/><text class="t3" x="825" y="273" text-anchor="middle">pedidos.eventos</text></g>
+
+  <!-- Fila superior -->
+  <g class="el node" data-s="1" data-node="cliente" tabindex="0" role="button" aria-label="Cliente">
+    <rect class="nd" x="20" y="30" width="120" height="70" rx="12"/>
+    <text class="t1" x="80" y="62" text-anchor="middle">Cliente</text><text class="t2" x="80" y="82" text-anchor="middle">web · móvil</text>
+  </g>
+  <g class="el" data-s="1"><path class="ar" d="M140,65 L178,65"/></g>
+  <g class="el node" data-s="1" data-node="gw" tabindex="0" role="button" aria-label="API Gateway">
+    <rect class="nd" x="180" y="30" width="140" height="70" rx="12"/>
+    <text class="t1" x="250" y="62" text-anchor="middle">API Gateway</text><text class="t2" x="250" y="82" text-anchor="middle">REST · auth</text>
+  </g>
+  <g class="el" data-s="1"><path class="ar" d="M320,65 L358,65"/></g>
+  <g class="el node" data-s="1" data-node="pedidos" tabindex="0" role="button" aria-label="Servicio de Pedidos">
+    <rect class="nd" x="360" y="30" width="150" height="70" rx="12"/>
+    <text class="t1" x="435" y="62" text-anchor="middle">Pedidos</text><text class="t2" x="435" y="82" text-anchor="middle">BD + outbox</text>
+  </g>
+  <g class="el" data-s="1"><path class="ar" d="M435,100 L435,133"/><text class="t2" x="445" y="121">lee outbox</text></g>
+  <g class="el node" data-s="1" data-node="relay" tabindex="0" role="button" aria-label="Relay del outbox">
+    <rect class="nd" x="360" y="135" width="150" height="46" rx="12"/>
+    <text class="t1" x="435" y="155" text-anchor="middle">Relay outbox</text><text class="t2" x="435" y="171" text-anchor="middle">poller · Debezium</text>
+  </g>
+  <g class="el" data-s="1"><path class="ar" d="M435,181 L435,198"/><text class="t2" x="445" y="194">PedidoCreado</text></g>
+  <g class="el node" data-s="1,2,3,4,5,6" data-node="orch" tabindex="0" role="button" aria-label="Orquestador de la saga">
+    <rect class="nd orch" x="600" y="20" width="210" height="90" rx="12"/>
+    <text class="t1" x="705" y="58" text-anchor="middle">Orquestador de la saga</text><text class="t2" x="705" y="80" text-anchor="middle">máquina de estados</text>
+  </g>
+  <g class="el" data-s="2,6"><path class="ar" d="M810,65 L848,65"/></g>
+  <g class="el node" data-s="2,6" data-node="sagadb" tabindex="0" role="button" aria-label="Base de datos del orquestador">
+    <rect class="nd" x="850" y="35" width="90" height="60" rx="12"/>
+    <text class="t3" x="895" y="62" text-anchor="middle">saga_state</text><text class="t2" x="895" y="80" text-anchor="middle">BD propia</text>
+  </g>
+  <g class="el" data-s="1,2"><path class="ar" d="M620,198 L620,112"/><text class="t2" x="610" y="148" text-anchor="end">consume</text><text class="t2" x="610" y="162" text-anchor="end">PedidoCreado</text></g>
+  <g class="el" data-s="2,4,5,6"><path class="ar" d="M700,110 L700,198"/><text class="t2" x="708" y="160">publica</text></g>
+  <g class="el" data-s="3,4,5"><path class="ar dash" d="M780,198 L780,112"/><text class="t2" x="788" y="160">lee respuestas</text></g>
+
+  <!-- Servicios -->
+  <g class="el" data-s="2"><path class="ar" d="M100,284 L100,368"/></g>
+  <g class="el" data-s="3"><path class="ar dash" d="M170,368 L170,302"/></g>
+  <g class="el node" data-s="2,3" data-node="inv" tabindex="0" role="button" aria-label="Servicio de Inventario">
+    <rect class="nd" x="40" y="370" width="190" height="70" rx="12"/>
+    <text class="t1" x="135" y="402" text-anchor="middle">Inventario</text><text class="t2" x="135" y="422" text-anchor="middle">BD propia · stock</text>
+  </g>
+
+  <g class="el" data-s="4"><path class="ar" d="M330,284 L330,368"/></g>
+  <g class="el" data-s="4"><path class="ar dash" d="M400,368 L400,302"/></g>
+  <g class="el node" data-s="4" data-node="pay" tabindex="0" role="button" aria-label="Servicio de Pagos">
+    <rect class="nd" x="270" y="370" width="190" height="70" rx="12"/>
+    <text class="t1" x="365" y="402" text-anchor="middle">Pagos</text><text class="t2" x="365" y="422" text-anchor="middle">BD propia · cobros</text>
+  </g>
+
+  <g class="el" data-s="5"><path class="ar" d="M560,284 L560,368"/></g>
+  <g class="el" data-s="5"><path class="ar dash" d="M630,368 L630,302"/></g>
+  <g class="el node" data-s="5" data-node="ship" tabindex="0" role="button" aria-label="Servicio de Envíos">
+    <rect class="nd" x="500" y="370" width="190" height="70" rx="12"/>
+    <text class="t1" x="595" y="402" text-anchor="middle">Envíos</text><text class="t2" x="595" y="422" text-anchor="middle">BD propia · envíos</text>
+  </g>
+
+  <g class="el" data-s="6"><path class="ar" d="M790,284 L790,368"/></g>
+  <g class="el node" data-s="6" data-node="notif" tabindex="0" role="button" aria-label="Servicio de Notificaciones">
+    <rect class="nd" x="730" y="370" width="190" height="70" rx="12"/>
+    <text class="t1" x="825" y="402" text-anchor="middle">Notificaciones</text><text class="t2" x="825" y="422" text-anchor="middle">email · push</text>
+  </g>
+
+  <text class="t2" x="20" y="478">Flecha continua: comando o evento. Flecha discontinua: respuesta al orquestador.</text>
+</svg>
+    </div>
+    <div class="sub">Los componentes atenuados no participan en el paso elegido.</div>
+    <div class="note"><b>Nota: «BD + outbox» en Pedidos.</b> Es el patrón Transactional Outbox. Pedidos no puede guardar el pedido y publicar en Kafka en una sola transacción, y si lo hace por separado puede quedar a medias (<i>dual write</i>). Por eso, en <b>una sola transacción de su BD</b>, inserta el pedido en <code>pedidos</code> y el evento <code>PedidoCreado</code> en la tabla <code>outbox</code>. Después un proceso aparte, el <b>relay</b> del diagrama (un poller o una herramienta de CDC como Debezium), lee la tabla y publica el evento en <code>pedidos.eventos</code>. El relay es un productor de Kafka, no un consumidor. Si Pedidos se cae, el evento sigue en la tabla y se publica al arrancar. Puede salir duplicado, así que los consumidores, como el orquestador, deben ser idempotentes.</div>
+  </div>
+
+  <div class="flow">
+    <div class="card info" id="info"></div>
+    <div class="card">
+      <h3>Reglas que sostienen el diseño</h3>
+      <div class="cons" style="gap:10px">
+        <div><b>Outbox.</b> El servicio guarda el evento en su BD dentro de la misma transacción que el cambio y otro proceso lo publica en Kafka. Evita la doble escritura.</div>
+        <div><b>Idempotencia.</b> Kafka entrega al menos una vez. Cada servicio ignora comandos repetidos usando el <code>sagaId</code> y el paso.</div>
+        <div><b>Clave por saga.</b> Usar <code>pedidoId</code> como clave mantiene en orden todos los mensajes de un pedido.</div>
+        <div><b>Timeouts y reintentos.</b> El orquestador vigila los pasos sin respuesta y reintenta. Lo irrecuperable va a una cola de errores.</div>
+        <div><b>Esquemas versionados.</b> Avro o Protobuf con un registro de esquemas permiten evolucionar eventos sin romper consumidores.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Orquestación frente a coreografía</h3>
+    <div class="scroll">
+      <table class="cmptbl">
+        <thead><tr><th></th><th>Orquestación</th><th>Coreografía</th></tr></thead>
+        <tbody>
+          <tr><td>Quién decide el siguiente paso</td><td>El orquestador, con el flujo en un solo sitio.</td><td>Cada servicio reacciona a los eventos de otros.</td></tr>
+          <tr><td>Acoplamiento</td><td>Los servicios solo conocen sus propios comandos.</td><td>Cada servicio conoce los eventos que escucha.</td></tr>
+          <tr><td>Visibilidad</td><td>El estado de cada saga está en un único lugar.</td><td>Repartida; hay que reconstruirla con trazas.</td></tr>
+          <tr><td>Compensaciones</td><td>Las lanza el orquestador en orden inverso.</td><td>Cada servicio decide cuándo deshacer lo suyo.</td></tr>
+          <tr><td>Riesgo principal</td><td>Un orquestador sin réplicas se convierte en cuello de botella.</td><td>Ciclos de eventos y flujos difíciles de seguir al crecer.</td></tr>
+          <tr><td>Cuándo encaja</td><td>Muchos pasos y reglas de negocio claras.</td><td>Flujos cortos con pocos participantes.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. SAGAS ============ -->
+<section class="panel" id="sagas" role="tabpanel" hidden>
+  <div class="sec-head">
+    <h2>Sagas con compensación</h2>
+    <p>No hay una transacción distribuida. Cada servicio confirma su parte y, si un paso falla, el orquestador ordena deshacer los pasos ya completados en orden inverso. Elige dónde falla y ejecuta la saga.</p>
+  </div>
+
+  <div class="card">
+    <div class="toolbar" style="align-items:end">
+      <div class="field"><label for="failAt">Fallo simulado</label>
+        <select id="failAt">
+          <option value="0">Ninguno (camino feliz)</option>
+          <option value="2">Stock insuficiente</option>
+          <option value="3" selected>Pago rechazado</option>
+          <option value="4">Sin transportista</option>
+        </select></div>
+      <div class="field"><label for="speed">Velocidad</label>
+        <select id="speed"><option value="1300">Lenta</option><option value="850" selected>Normal</option><option value="380">Rápida</option></select></div>
+      <button class="btn primary" id="bRun">Ejecutar saga</button>
+      <button class="btn" id="bReset">Reiniciar</button>
+    </div>
+    <div class="state"><span class="sub">Estado de la saga en el orquestador</span><span class="pill" id="sState">—</span></div>
+    <div class="saga">
+      <div class="stlist" id="stlist"></div>
+      <div style="display:grid;gap:8px;min-width:0">
+        <div class="sub">Mensajes en Kafka, en orden de aparición</div>
+        <div class="log" id="slog"></div>
+      </div>
+    </div>
+    <div id="sBanner"></div>
+  </div>
+
+  <div class="defs">
+    <div class="def"><h3>Compensación semántica</h3><p>No es un rollback. Es una acción de negocio que anula el efecto: reembolsar un cobro, liberar un stock, cancelar un envío. El cobro y su reembolso quedan los dos registrados.</p></div>
+    <div class="def"><h3>Orden inverso, solo lo completado</h3><p>El orquestador compensa únicamente los pasos que terminaron, del último al primero. El paso que falló no necesita deshacerse porque no llegó a aplicar nada.</p></div>
+    <div class="def"><h3>Compensaciones idempotentes</h3><p>Pueden repetirse sin efecto doble. Si una compensación falla, se reintenta con espera creciente y, agotados los intentos, pasa a una cola de errores con aviso a una persona.</p></div>
+    <div class="def"><h3>Pasos pivote y reintentables</h3><p>Conviene ordenar la saga: primero los pasos que se pueden deshacer, después el punto sin retorno y al final los pasos que se reintentan hasta que salgan bien.</p></div>
+    <div class="def"><h3>Sin aislamiento ACID</h3><p>Mientras la saga corre, otros ven estados intermedios. Por eso el pedido nace en PENDIENTE y solo pasa a CONFIRMADO al final.</p></div>
+    <div class="def"><h3>Estado persistente</h3><p>El orquestador guarda cada transición antes de enviar el siguiente comando. Si se reinicia, retoma cada saga desde su último estado conocido.</p></div>
+  </div>
+</section>
+</div>
+<script>
+(function(){
+'use strict';
+const $=(s,r)=>(r||document).querySelector(s);
+const $$=(s,r)=>Array.prototype.slice.call((r||document).querySelectorAll(s));
+
+/* ---------- Cinta decorativa: el log con su siguiente offset ---------- */
+function ribbon(){
+  const r=$('#ribbon'); if(!r) return;
+  const n=Math.max(6,Math.floor(r.clientWidth/42)-1);
+  const pat=[0,1,2,0,1,2,2,0,1,0,2,1,1,0,2,0,1,2,0,2,1,0,1,2];
+  let h='';
+  for(let i=0;i<n;i++) h+='<div class="rc"><i style="--c:var(--p'+pat[i%pat.length]+')"></i><b>'+i+'</b></div>';
+  h+='<div class="rc nx"><i></i><b>'+n+'</b></div>';
+  r.innerHTML=h;
+}
+let rt; window.addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(ribbon,150);});
+
+/* ---------- Pestañas ---------- */
+const tabs=$$('.tab'), panels=$$('.panel'), ids=['cluster','topics','servicios','sagas'];
+function show(id){
+  tabs.forEach(t=>{const on=t.dataset.t===id;t.setAttribute('aria-selected',on?'true':'false');t.tabIndex=on?0:-1;});
+  panels.forEach(p=>{p.hidden=p.id!==id;});
+  if(id==='topics') lRender();
+}
+tabs.forEach((t,i)=>{
+  t.addEventListener('click',()=>show(t.dataset.t));
+  t.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key==='ArrowLeft'){
+      const j=(i+(e.key==='ArrowRight'?1:tabs.length-1))%tabs.length;
+      tabs[j].focus(); show(tabs[j].dataset.t);
+    }
+  });
+});
+
+/* ====================== 1. CLÚSTER ====================== */
+const C={brokers:[1,2,3],parts:[{id:0,rep:[1,2,3]},{id:1,rep:[2,3,1]},{id:2,rep:[3,1,2]}]};
+function cReset(){
+  C.up={1:true,2:true,3:true}; C.controller=1;
+  C.leader=C.parts.map(p=>p.rep[0]); C.isr=C.parts.map(p=>p.rep.slice());
+  C.msg='Estado inicial: los tres brokers están activos y cada uno lidera una partición. El broker-1 es el controller.';
+}
+function cToggle(b){
+  if(C.up[b]){
+    C.up[b]=false; const ev=[];
+    C.parts.forEach((p,i)=>{
+      C.isr[i]=C.isr[i].filter(x=>x!==b);
+      if(C.leader[i]===b){
+        const nl=C.isr[i].length?C.isr[i][0]:null; C.leader[i]=nl;
+        ev.push('P'+i+': '+(nl?'nuevo líder broker-'+nl:'sin líder, la partición queda offline'));
+      }
+    });
+    if(C.controller===b){
+      const alive=C.brokers.filter(x=>C.up[x]); C.controller=alive.length?alive[0]:null;
+      ev.unshift(C.controller?'El controller pasa a broker-'+C.controller:'No queda ningún controller');
+    }
+    C.msg='broker-'+b+' caído. '+(ev.length?ev.join('. ')+'.':'No lideraba ninguna partición, así que no hay cambios de líder.');
+  }else{
+    C.up[b]=true;
+    C.parts.forEach((p,i)=>{
+      if(p.rep.includes(b)&&!C.isr[i].includes(b)){
+        const cur=C.isr[i]; C.isr[i]=p.rep.filter(x=>cur.includes(x)||x===b);
+        if(C.leader[i]===null) C.leader[i]=b;
+      }
+    });
+    if(C.controller===null) C.controller=b;
+    C.msg='broker-'+b+' de vuelta. Sus réplicas se ponen al día y vuelven al ISR como seguidoras. Los líderes no cambian solos: usa «Reequilibrar líderes».';
+  }
+  cRender();
+}
+function cPrefer(){
+  C.leader=C.parts.map((p,i)=>C.isr[i].length?C.isr[i][0]:null);
+  C.msg='Elección del líder preferido: cada partición vuelve a su primera réplica disponible dentro del ISR.';
+  cRender();
+}
+function cRender(){
+  $('#brokers').innerHTML=C.brokers.map(b=>{
+    const up=C.up[b];
+    const reps=C.parts.filter(p=>p.rep.includes(b)).map(p=>{
+      const i=p.id,isL=C.leader[i]===b,inIsr=C.isr[i].includes(b);
+      let cls='rep',role='seguidor';
+      if(!up){cls+=' out';role='sin servicio';}
+      else if(isL){cls+=' leader';role='líder';}
+      else if(!inIsr){cls+=' out';role='fuera del ISR';}
+      return '<div class="'+cls+'" style="--pc:var(--p'+i+')"><span>pedidos-P'+i+'</span><span>'+role+'</span></div>';
+    }).join('');
+    return '<div class="broker'+(up?'':' down')+'"><div class="bhead"><span class="dot"></span><span class="bname">broker-'+b+'</span>'
+      +(C.controller===b?'<span class="badge">controller</span>':'')
+      +'<span class="badge '+(up?'ok':'bad')+'">'+(up?'activo':'caído')+'</span></div>'+reps+'</div>';
+  }).join('');
+  $$('#clusterBtns [data-b]').forEach(btn=>{
+    const b=+btn.dataset.b; btn.textContent=(C.up[b]?'Detener':'Arrancar')+' broker-'+b; btn.classList.toggle('bad',C.up[b]);
+  });
+  $('#clusterMsg').textContent=C.msg;
+  $('#ptbody').innerHTML=C.parts.map(p=>{
+    const i=p.id,l=C.leader[i],isr=C.isr[i];
+    let st='<span class="badge ok">lee y escribe</span>';
+    if(l===null) st='<span class="badge bad">offline</span>';
+    else if(isr.length<2) st='<span class="badge warn" title="Con acks=all el ISR no alcanza min.insync.replicas, así que se rechazan las escrituras">solo lectura</span>';
+    return '<tr><td><span class="pk" style="--pc:var(--p'+i+')"></span>P'+i+'</td><td>['+p.rep.join(', ')+']</td><td>'+(l===null?'—':'broker-'+l)+'</td><td>['+isr.join(', ')+']</td><td>'+st+'</td></tr>';
+  }).join('');
+}
+$('#clusterBtns').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  if(b.dataset.b) cToggle(+b.dataset.b);
+  else if(b.dataset.act==='prefer') cPrefer();
+  else if(b.dataset.act==='reset'){cReset();cRender();}
+});
+
+/* ====================== 2. TOPICS Y PARTICIONES ====================== */
+const KEYS=['cliente-101','cliente-102','cliente-103','cliente-104'];
+const T={n:3,logs:[],rr:0,seq:0,last:null,fresh:null,note:'',
+  groups:[{id:'F',name:'grupo-facturacion',n:2,off:[],msg:''},{id:'A',name:'grupo-analitica',n:1,off:[],msg:''}]};
+function hash(k){let x=7;for(const c of k){x=(Math.imul(x,31)+c.charCodeAt(0))>>>0;}return x;}
+function tReset(){
+  T.logs=Array.from({length:T.n},()=>[]); T.rr=0; T.seq=0; T.last=null; T.fresh=null;
+  T.groups.forEach(g=>{g.off=Array(T.n).fill(0);g.msg='';});
+}
+function tProduce(key){
+  let p,hv=null;
+  if(key){hv=hash(key);p=hv%T.n;}else{p=T.rr%T.n;T.rr++;}
+  const off=T.logs[p].length;
+  T.logs[p].push({key:key||null,id:++T.seq});
+  T.last={key:key||null,h:hv,p,off}; T.fresh={p,off}; T.note='';
+}
+function assign(g){
+  const m=Array.from({length:g.n},()=>[]);
+  if(g.n>0) for(let p=0;p<T.n;p++) m[p%g.n].push(p);
+  return m;
+}
+function consume(g,all){
+  if(g.n===0) return;
+  const m=assign(g); let moved;
+  do{
+    moved=false;
+    m.forEach(ps=>ps.forEach(p=>{if(g.off[p]<T.logs[p].length){g.off[p]++;moved=true;}}));
+  }while(all&&moved);
+}
+function mkc(g){return 'mk'+(g.id==='A'?' b':'');}
+function mapRender(){
+  const el=$('#mapline'),l=T.last;
+  if(T.note) el.innerHTML=T.note;
+  else if(!l) el.textContent='Produce un mensaje para ver cómo se elige la partición.';
+  else if(l.key) el.innerHTML='clave <b>'+l.key+'</b> → hash '+l.h+' mod '+T.n+' = <b>P'+l.p+'</b> → offset '+l.off;
+  else el.innerHTML='sin clave → reparto rotatorio → <b>P'+l.p+'</b> → offset '+l.off;
+}
+function lRender(){
+  const W=14;
+  $('#plogs').innerHTML=T.logs.map((log,p)=>{
+    const len=log.length,start=Math.max(0,len-W);
+    const marks=off=>T.groups.map(g=>g.off[p]===off?'<span class="'+mkc(g)+'">'+g.id+'</span>':'').join('');
+    let h='';
+    if(start>0) h+='<div class="cell gap"><div class="cbox">+'+start+'</div><div class="coff">…</div><div class="cmark">'
+      +T.groups.map(g=>g.off[p]<start?'<span class="'+mkc(g)+'">'+g.id+'</span>':'').join('')+'</div></div>';
+    for(let o=start;o<len;o++){
+      const m=log[o],ki=m.key?KEYS.indexOf(m.key):-1,fresh=T.fresh&&T.fresh.p===p&&T.fresh.off===o;
+      h+='<div class="cell'+(fresh?' fresh':'')+'"><div class="cbox"'+(ki>=0?' style="--kc:var(--p'+ki+')"':'')+'>'+(m.key?m.key.slice(-3):'·')+'</div><div class="coff">'+o+'</div><div class="cmark">'+marks(o)+'</div></div>';
+    }
+    h+='<div class="cell nx"><div class="cbox">→</div><div class="coff">'+len+'</div><div class="cmark">'+marks(len)+'</div></div>';
+    return '<div class="plog"><div class="plabel">P'+p+'</div><div class="cells">'+h+'</div></div>';
+  }).join('');
+  $$('#plogs .cells').forEach(c=>{c.scrollLeft=c.scrollWidth;});
+}
+function gRender(){
+  $('#groups').innerHTML=T.groups.map(g=>{
+    const m=assign(g); let lagT=0;
+    for(let p=0;p<T.n;p++) lagT+=T.logs[p].length-g.off[p];
+    const cons=g.n===0?'<div class="empty">Sin consumidores: nadie lee y el lag crece.</div>':m.map((ps,i)=>{
+      if(!ps.length) return '<div class="con idle"><span>consumidor-'+(i+1)+'</span><span>sin partición, inactivo</span></div>';
+      return '<div class="con"><span>consumidor-'+(i+1)+'</span><span>'+ps.map(p=>'P'+p+' · lag '+(T.logs[p].length-g.off[p])).join('  |  ')+'</span></div>';
+    }).join('');
+    return '<div class="grp" data-g="'+g.id+'"><div class="ghead"><span class="gname"><span class="'+mkc(g)+'">'+g.id+'</span> '+g.name+'</span>'
+      +'<span class="stepper"><button class="btn" data-a="minus" aria-label="Quitar un consumidor">−</button>'+g.n+' '+(g.n===1?'consumidor':'consumidores')+'<button class="btn" data-a="plus" aria-label="Añadir un consumidor">+</button></span></div>'
+      +'<div class="cons">'+cons+'</div>'
+      +'<div class="lagbar">Lag total: <b>'+lagT+'</b>'+(g.msg?' · '+g.msg:'')+'</div>'
+      +'<div class="toolbar"><button class="btn primary" data-a="one">Leer un mensaje por partición</button><button class="btn" data-a="all">Leer todo</button></div></div>';
+  }).join('');
+}
+function tAll(){mapRender();lRender();gRender();}
+function rebalanceMsg(g){
+  if(g.n===0) return 'sin consumidores.';
+  return 'rebalanceo: '+T.n+' '+(T.n===1?'partición':'particiones')+' entre '+g.n+' '+(g.n===1?'consumidor':'consumidores')+(g.n>T.n?'; sobran '+(g.n-T.n)+' sin trabajo.':'.');
+}
+$('#selKey').innerHTML=KEYS.map(k=>'<option value="'+k+'">'+k+'</option>').join('')+'<option value="">(sin clave)</option>';
+$('#keysLegend').innerHTML=KEYS.map((k,i)=>'<span><i style="--kc:var(--p'+i+')"></i>'+k+'</span>').join('')+'<span><i style="--kc:var(--muted)"></i>sin clave</span>';
+$('#selN').addEventListener('change',e=>{
+  T.n=+e.target.value; tReset();
+  T.note='Topic recreado con '+T.n+' '+(T.n===1?'partición':'particiones')+'. En Kafka real solo se pueden aumentar, y al hacerlo cambia a qué partición va cada clave.';
+  tAll();
+});
+$('#bProd').addEventListener('click',()=>{tProduce($('#selKey').value);tAll();});
+$('#bBurst').addEventListener('click',()=>{
+  for(let i=0;i<10;i++) tProduce(KEYS[Math.floor(Math.random()*KEYS.length)]);
+  T.fresh=null; tAll();
+});
+$('#bClear').addEventListener('click',()=>{tReset();T.note='Topic vaciado. Los offsets vuelven a 0.';tAll();});
+$('#groups').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-a]'); if(!b) return;
+  const g=T.groups.find(x=>x.id===b.closest('.grp').dataset.g), a=b.dataset.a;
+  if(a==='plus'&&g.n<6){g.n++;g.msg=rebalanceMsg(g);}
+  else if(a==='minus'&&g.n>0){g.n--;g.msg=rebalanceMsg(g);}
+  else if(a==='one'){consume(g,false);g.msg='';}
+  else if(a==='all'){consume(g,true);g.msg='';}
+  T.fresh=null; gRender(); lRender();
+});
+
+/* ====================== 3. MICROSERVICIOS ====================== */
+const FLOW=[
+  {t:'Entra el pedido',d:'El cliente hace <b>POST /pedidos</b>. Pedidos guarda el pedido en estado PENDIENTE y, en la misma transacción, un registro en su tabla outbox. Un relay lee esa tabla y lo publica como <b>PedidoCreado</b> en <b>pedidos.eventos</b>. El orquestador es el consumer de ese evento.'},
+  {t:'Arranca la saga',d:'El orquestador consume <b>PedidoCreado</b> de <b>pedidos.eventos</b>, guarda el estado en <b>saga_state</b> y envía el comando <b>ReservarStock</b> a <b>inventario.comandos</b>.'},
+  {t:'Responde Inventario',d:'Inventario reserva el stock en su propia base de datos y publica <b>StockReservado</b> en <b>saga.respuestas</b>. El orquestador lo lee y sabe que puede avanzar.'},
+  {t:'Cobro',d:'El orquestador envía <b>CobrarPago</b> a <b>pagos.comandos</b>. Pagos cobra y responde <b>PagoCobrado</b> en <b>saga.respuestas</b>.'},
+  {t:'Envío',d:'El orquestador envía <b>CrearEnvio</b> a <b>envios.comandos</b>. Envíos prepara la entrega y responde <b>EnvioCreado</b>.'},
+  {t:'Cierre',d:'Con todos los pasos hechos, el orquestador marca la saga COMPLETADA y publica <b>PedidoConfirmado</b> en <b>pedidos.eventos</b>. Pedidos pasa el pedido a CONFIRMADO y Notificaciones avisa al cliente.'}
+];
+const NODES={
+  cliente:{t:'Cliente',r:'Aplicación web o móvil que inicia el pedido.',c:'Nada',p:'Peticiones HTTP al gateway',d:'Sin estado en el servidor'},
+  gw:{t:'API Gateway',r:'Punto de entrada. Autentica, aplica límites de uso y enruta hacia el servicio de Pedidos.',c:'Nada',p:'Llamadas REST internas',d:'Sin base de datos propia'},
+  pedidos:{t:'Servicio de Pedidos',r:'Crea el pedido en PENDIENTE y lo pasa a CONFIRMADO o CANCELADO según el resultado de la saga.',c:'pedidos.eventos (PedidoConfirmado, PedidoCancelado)',p:'Nada directamente: deja PedidoCreado en su tabla outbox y el relay lo publica en pedidos.eventos',d:'Tablas pedidos y outbox, escritas en una sola transacción'},
+  orch:{t:'Orquestador de la saga',r:'Conoce el flujo completo. Decide el siguiente comando según cada respuesta y lanza las compensaciones cuando un paso falla.',c:'pedidos.eventos (PedidoCreado), saga.respuestas',p:'inventario.comandos, pagos.comandos, envios.comandos, pedidos.eventos',d:'saga_state: paso actual, intentos y límites de tiempo'},
+  sagadb:{t:'saga_state',r:'Registro persistente de cada saga: estado, pasos completados y correlationId.',c:'Nada',p:'Nada',d:'Se escribe antes de enviar cada comando, para retomar tras un reinicio'},
+  inv:{t:'Servicio de Inventario',r:'Reserva y libera stock. La reserva es la acción y la liberación es su compensación.',c:'inventario.comandos (ReservarStock, LiberarStock)',p:'saga.respuestas (StockReservado, StockInsuficiente, StockLiberado)',d:'BD propia con existencias y reservas'},
+  pay:{t:'Servicio de Pagos',r:'Cobra y reembolsa. Un reembolso no borra el cobro: lo anula con un movimiento nuevo.',c:'pagos.comandos (CobrarPago, ReembolsarPago)',p:'saga.respuestas (PagoCobrado, PagoRechazado, PagoReembolsado)',d:'BD propia con cobros y reembolsos'},
+  ship:{t:'Servicio de Envíos',r:'Crea y cancela envíos con el transportista.',c:'envios.comandos (CrearEnvio, CancelarEnvio)',p:'saga.respuestas (EnvioCreado, SinTransportista, EnvioCancelado)',d:'BD propia con envíos y etiquetas'},
+  notif:{t:'Servicio de Notificaciones',r:'Avisa al cliente del resultado. No participa en la saga, solo escucha el resultado final.',c:'pedidos.eventos (PedidoConfirmado, PedidoCancelado)',p:'Nada',d:'Plantillas y registro de envíos de email y push'},
+  relay:{t:'Relay del outbox',r:'Lee la tabla outbox de Pedidos y publica cada evento en Kafka. No es un consumer de Kafka: es un productor que lee de la base de datos.',c:'Nada de Kafka. Lee la tabla outbox de la BD de Pedidos',p:'pedidos.eventos (PedidoCreado)',d:'Marca cada evento como enviado cuando Kafka lo confirma. Puede ser un poller o Debezium (CDC)'},
+  kafka:{t:'Clúster Kafka',r:'Transporta comandos, respuestas y eventos, y los conserva durante el tiempo de retención.',c:'Nada',p:'Nada',d:'Topics con 3 particiones y factor de replicación 3. La clave de los mensajes es el pedidoId'}
+};
+let cur=1;
+function setStep(n){
+  cur=Math.max(1,Math.min(FLOW.length,n));
+  $$('#arch .el').forEach(el=>{el.classList.toggle('act',el.dataset.s.split(',').map(Number).includes(cur));});
+  $$('#steps .sbtn').forEach((b,i)=>b.setAttribute('aria-pressed',i+1===cur?'true':'false'));
+  $('#cap').innerHTML='<strong style="font-family:var(--f-display)">Paso '+cur+' de '+FLOW.length+'. '+FLOW[cur-1].t+'.</strong> '+FLOW[cur-1].d;
+  $('#sPrev').disabled=cur===1; $('#sNext').disabled=cur===FLOW.length;
+}
+$('#steps').innerHTML=FLOW.map((f,i)=>'<button class="sbtn" aria-pressed="false" aria-label="Paso '+(i+1)+': '+f.t+'">'+(i+1)+'</button>').join('');
+$('#steps').addEventListener('click',e=>{const b=e.target.closest('.sbtn');if(b)setStep($$('#steps .sbtn').indexOf(b)+1);});
+$('#sPrev').addEventListener('click',()=>setStep(cur-1));
+$('#sNext').addEventListener('click',()=>setStep(cur+1));
+function showNode(k){
+  const n=NODES[k]; if(!n) return;
+  $$('#arch .node').forEach(g=>g.classList.toggle('sel',g.dataset.node===k));
+  $('#info').innerHTML='<h3>'+n.t+'</h3><dl><dt>Responsabilidad</dt><dd>'+n.r+'</dd><dt>Consume</dt><dd class="mono">'+n.c+'</dd><dt>Publica</dt><dd class="mono">'+n.p+'</dd><dt>Datos</dt><dd>'+n.d+'</dd></dl>';
+}
+$('#arch').addEventListener('click',e=>{const g=e.target.closest('.node');if(g)showNode(g.dataset.node);});
+$('#arch').addEventListener('keydown',e=>{
+  if(e.key!=='Enter'&&e.key!==' ') return;
+  const g=e.target.closest('.node'); if(g){e.preventDefault();showNode(g.dataset.node);}
+});
+
+/* ====================== 4. SAGAS ====================== */
+const SS=[
+  {i:1,name:'Crear pedido',svc:'Pedidos',state:'INICIADA',
+    out:[{w:'Pedidos → pedidos.eventos',t:'pedidos.eventos',m:'PedidoCreado',k:'cmd'}],
+    comp:{label:'CancelarPedido',out:[{w:'Orquestador → pedidos.eventos',t:'pedidos.eventos',m:'PedidoCancelado',k:'comp'}]}},
+  {i:2,name:'Reservar stock',svc:'Inventario',state:'STOCK_RESERVADO',fail:'StockInsuficiente',
+    out:[{w:'Orquestador → Inventario',t:'inventario.comandos',m:'ReservarStock',k:'cmd'},{w:'Inventario → Orquestador',t:'saga.respuestas',m:'StockReservado',k:'reply'}],
+    comp:{label:'LiberarStock',out:[{w:'Orquestador → Inventario',t:'inventario.comandos',m:'LiberarStock',k:'comp'},{w:'Inventario → Orquestador',t:'saga.respuestas',m:'StockLiberado',k:'reply'}]}},
+  {i:3,name:'Cobrar pago',svc:'Pagos',state:'PAGO_COBRADO',fail:'PagoRechazado',
+    out:[{w:'Orquestador → Pagos',t:'pagos.comandos',m:'CobrarPago',k:'cmd'},{w:'Pagos → Orquestador',t:'saga.respuestas',m:'PagoCobrado',k:'reply'}],
+    comp:{label:'ReembolsarPago',out:[{w:'Orquestador → Pagos',t:'pagos.comandos',m:'ReembolsarPago',k:'comp'},{w:'Pagos → Orquestador',t:'saga.respuestas',m:'PagoReembolsado',k:'reply'}]}},
+  {i:4,name:'Crear envío',svc:'Envíos',state:'ENVIO_CREADO',fail:'SinTransportista',
+    out:[{w:'Orquestador → Envíos',t:'envios.comandos',m:'CrearEnvio',k:'cmd'},{w:'Envíos → Orquestador',t:'saga.respuestas',m:'EnvioCreado',k:'reply'}],
+    comp:{label:'CancelarEnvio',out:[{w:'Orquestador → Envíos',t:'envios.comandos',m:'CancelarEnvio',k:'comp'},{w:'Envíos → Orquestador',t:'saga.respuestas',m:'EnvioCancelado',k:'reply'}]}},
+  {i:5,name:'Confirmar pedido',svc:'Pedidos',state:'COMPLETADA',
+    out:[{w:'Orquestador → pedidos.eventos',t:'pedidos.eventos',m:'PedidoConfirmado',k:'cmd'}],comp:null}
+];
+const S={fwd:[],cmp:[],log:[],state:'—',finished:false,end:null,running:false};
+let runId=0;
+function sBlank(){
+  S.fwd=SS.map(()=>'idle'); S.cmp=SS.map(()=>'idle'); S.log=[]; S.state='—'; S.finished=false; S.end=null; S.running=false;
+}
+function plan(failAt){
+  const ev=[],done=[];
+  ev.push({k:'state',v:'INICIADA'});
+  for(const s of SS){
+    ev.push({k:'fwd',i:s.i,v:'run',d:1});
+    if(s.i===failAt){
+      s.out.slice(0,-1).forEach(e=>ev.push({k:'log',e}));
+      ev.push({k:'log',e:{w:s.svc+' → Orquestador',t:'saga.respuestas',m:s.fail,k:'fail'}});
+      ev.push({k:'fwd',i:s.i,v:'fail',d:1},{k:'cmp',i:s.i,v:'skip'},{k:'state',v:'COMPENSANDO',d:1});
+      done.slice().reverse().forEach(j=>{
+        const c=SS[j-1];
+        ev.push({k:'cmp',i:j,v:'run',d:1});
+        c.comp.out.forEach(e=>ev.push({k:'log',e}));
+        ev.push({k:'cmp',i:j,v:'ok',d:1});
+      });
+      ev.push({k:'state',v:'CANCELADA'},{k:'end',ok:false,step:s,labels:done.slice().reverse().map(j=>SS[j-1].comp.label)});
+      return ev;
+    }
+    s.out.forEach(e=>ev.push({k:'log',e}));
+    ev.push({k:'fwd',i:s.i,v:'ok',d:1},{k:'state',v:s.state});
+    done.push(s.i);
+  }
+  ev.push({k:'end',ok:true});
+  return ev;
+}
+function apply(e){
+  if(e.k==='fwd') S.fwd[e.i-1]=e.v;
+  else if(e.k==='cmp') S.cmp[e.i-1]=e.v;
+  else if(e.k==='log') S.log.push(e.e);
+  else if(e.k==='state') S.state=e.v;
+  else if(e.k==='end'){S.finished=true;S.end=e;}
+}
+function sRender(){
+  $('#stlist').innerHTML=SS.map(s=>{
+    const f=S.fwd[s.i-1],c=S.cmp[s.i-1];
+    let cls='st';
+    if(c==='run') cls+=' crun'; else if(c==='ok') cls+=' rev';
+    else if(f==='run') cls+=' run'; else if(f==='ok') cls+=' done'; else if(f==='fail') cls+=' fail';
+    const fw={idle:S.finished?['no ejecutado','']:['pendiente',''],run:['en curso','run pulse'],ok:['hecho','ok'],fail:['falló','fail']}[f];
+    let cc;
+    if(!s.comp) cc=['sin compensación, es el paso final',''];
+    else if(c==='run') cc=['compensando: '+s.comp.label,'cmp pulse'];
+    else if(c==='ok') cc=['revertido: '+s.comp.label,'cmp'];
+    else if(c==='skip') cc=['nada que deshacer',''];
+    else cc=['compensación: '+s.comp.label,''];
+    return '<div class="'+cls+'"><div class="idx">'+s.i+'</div><div><div class="sname">'+s.name+'<small>'+s.svc+'</small></div>'
+      +'<div class="chips"><span class="chip '+fw[1]+'">'+fw[0]+'</span><span class="chip '+cc[1]+'">'+cc[0]+'</span></div>'
+      +(f==='fail'?'<div class="sub" style="color:var(--bad);margin-top:6px">Respuesta recibida: '+s.fail+'</div>':'')+'</div></div>';
+  }).join('');
+  const lg=$('#slog');
+  lg.innerHTML=S.log.length?S.log.map((e,i)=>'<div class="le '+(e.k==='reply'?'reply':e.k==='fail'?'fail':e.k==='comp'?'comp':'')+'"><span class="w">#'+(i+1)+' · '+e.w+'</span><span class="m"><b>'+e.m+'</b> en <code>'+e.t+'</code> · clave pedido-1042</span></div>').join('')
+    :'<div class="empty">Ejecuta la saga para ver los mensajes.</div>';
+  lg.scrollTop=lg.scrollHeight;
+  const st=$('#sState'); st.textContent=S.state;
+  const kind={COMPLETADA:'ok',COMPENSANDO:'cmp',CANCELADA:'bad'}[S.state]||(S.state==='—'?'':'run');
+  st.className='pill'+(kind?' '+kind:'');
+  const bn=$('#sBanner');
+  if(S.end&&S.end.ok) bn.innerHTML='<div class="banner ok"><b>Saga completada.</b> Los cinco pasos terminaron, el pedido pasa a CONFIRMADO y no hizo falta compensar nada.</div>';
+  else if(S.end) bn.innerHTML='<div class="banner bad"><b>Saga cancelada.</b> Falló <code>'+S.end.step.fail+'</code> en el paso «'+S.end.step.name+'». El orquestador compensó '+S.end.labels.length+(S.end.labels.length===1?' paso':' pasos')+' en orden inverso: '+S.end.labels.map(x=>'<code>'+x+'</code>').join(' → ')+'. El pedido queda CANCELADO.</div>';
+  else bn.innerHTML='';
+  $('#bRun').disabled=S.running;
+}
+function sInstant(){
+  runId++; sBlank(); plan(+$('#failAt').value).forEach(apply); sRender();
+}
+async function sPlay(){
+  const id=++runId; sBlank(); S.running=true; sRender();
+  const ev=plan(+$('#failAt').value), ms=+$('#speed').value;
+  for(const e of ev){
+    if(id!==runId) return;
+    apply(e); sRender();
+    if(e.d) await new Promise(r=>setTimeout(r,ms));
+  }
+  if(id===runId){S.running=false;sRender();}
+}
+$('#bRun').addEventListener('click',sPlay);
+$('#bReset').addEventListener('click',()=>{runId++;sBlank();sRender();});
+$('#failAt').addEventListener('change',sInstant);
+
+/* ---------- Estado inicial de cada laboratorio ---------- */
+ribbon();
+cReset(); cRender();
+tReset();
+[0,1,2,0,3,1,2,0,1].forEach(i=>tProduce(KEYS[i]));
+T.fresh=null; T.last=null; T.note='';
+consume(T.groups[0]); consume(T.groups[0]); consume(T.groups[1]);
+tAll();
+setStep(1); showNode('orch');
+sInstant();
+const h0=(location.hash||'').slice(1);
+show(ids.includes(h0)?h0:'cluster');
+window.addEventListener('hashchange',()=>{const x=(location.hash||'').slice(1);if(ids.includes(x))show(x);});
+})();
+</script>
+</body>
+</html>
