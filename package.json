@@ -1,0 +1,23 @@
+{
+  "name": "pedidos-kafka",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pedidos con microservicios, Kafka (saga orquestada + outbox) y PostgreSQL",
+  "workspaces": [
+    "libs/*",
+    "services/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "smoke": "node scripts/smoke.mjs",
+    "token": "node scripts/token.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}

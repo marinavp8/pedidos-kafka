@@ -1,0 +1,34 @@
+---
+# ---- Ubicación ----
+app_dir: "/home/{{ ansible_user_id }}/pedidos-kafka"
+
+# ---- Exposición pública ----
+traefik_enabled: true
+traefik_http_port: 80          # el reto ACME HTTP-01 exige que el 80 público llegue aquí
+traefik_https_port: 443
+api_domain: "api.{{ public_ip }}.sslip.io"   # public_ip se define por host en el inventario
+# acme_email: definir en el inventario si traefik_enabled
+
+# Puerto local del gateway (siempre en loopback salvo que cambies gateway_bind).
+gateway_bind: 127.0.0.1
+gateway_local_port: 18080
+
+# ---- Kafka (KRaft; nodos combinados broker+controller) ----
+kafka_brokers: 3               # 1 (pruebas) o 3 (alta disponibilidad)
+kafka_heap: 512m
+kafka_partitions: 6
+kafka_rf: "{{ [kafka_brokers | int, 3] | min }}"
+kafka_min_isr: "{{ 2 if (kafka_rf | int) >= 3 else 1 }}"
+
+# ---- Aplicación ----
+orquestador_replicas: 2
+saga_step_timeout_ms: 15000
+saga_max_intentos: 5
+pago_limite: 5000              # solo afecta a la pasarela simulada
+demo_login: false              # ¡SOLO demos! Activa /auth/dev: cualquiera obtiene un token (incluido operador)
+seed_demo_data: false          # true para cargar productos/transportistas de demo (permite correr scripts/smoke.mjs)
+
+# ---- Imágenes ----
+postgres_image: postgres:17-alpine
+kafka_image: apache/kafka:4.0.0
+traefik_image: traefik:v3.6

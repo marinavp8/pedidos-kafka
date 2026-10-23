@@ -1,0 +1,186 @@
+# Generado por Ansible — no editar a mano (se hace copia .bak en cada cambio).
+# Los secretos viven en .env (generado en este servidor, modo 0600).
+name: pedidos-kafka
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+x-app-env: &app-env
+  KAFKA_BROKERS: "{% for i in range(1, kafka_brokers | int + 1) %}kafka-{{ i }}:9092{{ ',' if not loop.last else '' }}{% endfor %}"
+  KAFKA_RF: "{{ kafka_rf }}"
+  KAFKA_MIN_ISR: "{{ kafka_min_isr }}"
+  KAFKA_PARTITIONS: "{{ kafka_partitions }}"
+  SEED_DEMO_DATA: "{{ seed_demo_data | lower }}"
+  SAGA_STEP_TIMEOUT_MS: "{{ saga_step_timeout_ms }}"
+  SAGA_MAX_INTENTOS: "{{ saga_max_intentos }}"
+  PAGO_LIMITE: "{{ pago_limite }}"
+
+x-app: &app
+  restart: unless-stopped
+  logging: *logging
+  depends_on:
+    postgres: { condition: service_healthy }
+{% for i in range(1, kafka_brokers | int + 1) %}
+    kafka-{{ i }}: { condition: service_healthy }
+{% endfor %}
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health >/dev/null || exit 1"]
+    interval: 15s
+    timeout: 5s
+    retries: 5
+    start_period: 40s
+
+services:
+  postgres:
+    image: {{ postgres_image }}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PG_PASS_PEDIDOS: ${PG_PASS_PEDIDOS}
+      PG_PASS_SAGA: ${PG_PASS_SAGA}
+      PG_PASS_INVENTARIO: ${PG_PASS_INVENTARIO}
+      PG_PASS_PAGOS: ${PG_PASS_PAGOS}
+      PG_PASS_ENVIOS: ${PG_PASS_ENVIOS}
+      PG_PASS_NOTIFICACIONES: ${PG_PASS_NOTIFICACIONES}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./src/deploy/postgres-init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 20
+
+{% for i in range(1, kafka_brokers | int + 1) %}
+  kafka-{{ i }}:
+    image: {{ kafka_image }}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID}
+      KAFKA_NODE_ID: "{{ i }}"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-{{ i }}:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "{% for j in range(1, kafka_brokers | int + 1) %}{{ j }}@kafka-{{ j }}:9093{{ ',' if not loop.last else '' }}{% endfor %}"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "{{ kafka_rf }}"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "{{ kafka_rf }}"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "{{ kafka_min_isr }}"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "{{ kafka_rf }}"
+      KAFKA_MIN_INSYNC_REPLICAS: "{{ kafka_min_isr }}"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_HEAP_OPTS: -Xmx{{ kafka_heap }} -Xms{{ kafka_heap }}
+    volumes:
+      - kafka{{ i }}:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 15s
+      retries: 20
+      start_period: 40s
+
+{% endfor %}
+  pedidos:
+    <<: *app
+    build: { context: ./src, args: { SERVICE: pedidos } }
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://pedidos_app:${PG_PASS_PEDIDOS}@postgres:5432/pedidos_db
+
+  orquestador:
+    <<: *app
+    build: { context: ./src, args: { SERVICE: orquestador } }
+    deploy:
+      replicas: {{ orquestador_replicas }}
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://saga_app:${PG_PASS_SAGA}@postgres:5432/saga_db
+
+  inventario:
+    <<: *app
+    build: { context: ./src, args: { SERVICE: inventario } }
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://inventario_app:${PG_PASS_INVENTARIO}@postgres:5432/inventario_db
+
+  pagos:
+    <<: *app
+    build: { context: ./src, args: { SERVICE: pagos } }
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://pagos_app:${PG_PASS_PAGOS}@postgres:5432/pagos_db
+
+  envios:
+    <<: *app
+    build: { context: ./src, args: { SERVICE: envios } }
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://envios_app:${PG_PASS_ENVIOS}@postgres:5432/envios_db
+
+  notificaciones:
+    <<: *app
+    build: { context: ./src, args: { SERVICE: notificaciones } }
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgres://notificaciones_app:${PG_PASS_NOTIFICACIONES}@postgres:5432/notificaciones_db
+
+  gateway:
+    restart: unless-stopped
+    logging: *logging
+    build: { context: ./src, args: { SERVICE: gateway } }
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      DEV_LOGIN: "{{ demo_login | lower }}"
+    ports:
+      - "{{ gateway_bind }}:{{ gateway_local_port }}:3000"
+    depends_on:
+      - pedidos
+      - orquestador
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+{% if traefik_enabled %}
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.pedidos-api.rule: Host(`{{ api_domain }}`)
+      traefik.http.routers.pedidos-api.entrypoints: websecure
+      traefik.http.routers.pedidos-api.tls.certresolver: le
+      traefik.http.services.pedidos-api.loadbalancer.server.port: "3000"
+
+  traefik:
+    image: {{ traefik_image }}
+    restart: unless-stopped
+    logging: *logging
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.le.acme.email={{ acme_email }}
+      - --certificatesresolvers.le.acme.storage=/acme/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+    ports:
+      - "{{ traefik_http_port }}:80"
+      - "{{ traefik_https_port }}:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-acme:/acme
+{% endif %}
+
+volumes:
+  pgdata:
+{% for i in range(1, kafka_brokers | int + 1) %}
+  kafka{{ i }}:
+{% endfor %}
+{% if traefik_enabled %}
+  traefik-acme:
+{% endif %}

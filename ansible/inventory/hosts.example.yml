@@ -1,0 +1,11 @@
+# Copia a inventory/hosts.yml y ajusta (hosts.yml está en .gitignore).
+all:
+  children:
+    vps:
+      hosts:
+        pedidos-vps:
+          # Alias de ~/.ssh/config (admite ProxyJump) o IP/hostname directo.
+          ansible_host: CAMBIAR_alias_o_ip
+          # ansible_user: ubuntu          # si no lo define ~/.ssh/config
+          public_ip: 203.0.113.10         # IP pública del VPS (para el dominio sslip.io y el certificado)
+          acme_email: tu@correo.com       # obligatorio si traefik_enabled

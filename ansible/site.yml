@@ -1,0 +1,17 @@
+---
+- name: Desplegar pedidos-kafka en el VPS con Docker
+  hosts: vps
+  gather_facts: true
+  pre_tasks:
+    - name: Validar variables obligatorias
+      ansible.builtin.assert:
+        that:
+          - public_ip is defined
+          - kafka_brokers | int in [1, 3]
+          - (not traefik_enabled) or (acme_email is defined)
+        fail_msg: >-
+          Define public_ip (y acme_email si traefik_enabled) en el inventario;
+          kafka_brokers debe ser 1 o 3.
+  roles:
+    - docker
+    - stack

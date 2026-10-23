@@ -1,0 +1,96 @@
+---
+- name: Directorios de la aplicación
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ app_dir }}"
+    - "{{ app_dir }}/src"
+
+- name: Sincronizar el código fuente
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../"
+    dest: "{{ app_dir }}/src/"
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=node_modules"
+      - "--exclude=dist"
+      - "--exclude=*.tsbuildinfo"
+      - "--exclude=ansible"
+      - "--exclude=docs"
+      - "--exclude=.env"
+
+# Secretos: se generan UNA vez en el propio servidor y no se vuelven a tocar.
+- name: Generar .env con secretos (solo si no existe)
+  ansible.builtin.shell: |
+    set -eu
+    umask 077
+    rand() { openssl rand -hex 24; }
+    cat > "{{ app_dir }}/.env" <<EOF
+    POSTGRES_PASSWORD=$(rand)
+    PG_PASS_PEDIDOS=$(rand)
+    PG_PASS_SAGA=$(rand)
+    PG_PASS_INVENTARIO=$(rand)
+    PG_PASS_PAGOS=$(rand)
+    PG_PASS_ENVIOS=$(rand)
+    PG_PASS_NOTIFICACIONES=$(rand)
+    JWT_SECRET=$(rand)
+    KAFKA_CLUSTER_ID=$(openssl rand -base64 16 | tr '+/' '-_' | tr -d '=')
+    EOF
+  args:
+    executable: /bin/bash
+    creates: "{{ app_dir }}/.env"
+  no_log: true
+
+- name: Permisos estrictos del .env
+  ansible.builtin.file:
+    path: "{{ app_dir }}/.env"
+    mode: "0600"
+
+- name: Renderizar compose.yml (con copia .bak del anterior)
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ app_dir }}/compose.yml"
+    mode: "0644"
+    backup: true
+
+- name: Validar compose.yml
+  ansible.builtin.command: docker compose config -q
+  args:
+    chdir: "{{ app_dir }}"
+  become: true
+  changed_when: false
+
+- name: Levantar / actualizar el stack
+  ansible.builtin.command: docker compose up -d --build --remove-orphans
+  args:
+    chdir: "{{ app_dir }}"
+  become: true
+  register: compose_up
+  changed_when: >-
+    ('Started' in compose_up.stderr) or ('Created' in compose_up.stderr) or
+    ('Recreated' in compose_up.stderr) or ('Built' in compose_up.stderr)
+
+- name: Esperar a que el gateway responda
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ gateway_local_port }}/health"
+    return_content: true
+  register: gw
+  until: gw.status == 200
+  retries: 40
+  delay: 5
+
+- name: Estado final del stack
+  ansible.builtin.command: docker compose ps
+  args:
+    chdir: "{{ app_dir }}"
+  become: true
+  changed_when: false
+  register: ps
+
+- name: Mostrar estado
+  ansible.builtin.debug:
+    msg: "{{ ps.stdout_lines + ['', 'API: ' ~ (('https://' ~ api_domain) if traefik_enabled else ('http://' ~ gateway_bind ~ ':' ~ gateway_local_port))] }}"

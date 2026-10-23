@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "libs/common" },
+    { "path": "services/pedidos" },
+    { "path": "services/orquestador" },
+    { "path": "services/inventario" },
+    { "path": "services/pagos" },
+    { "path": "services/envios" },
+    { "path": "services/notificaciones" },
+    { "path": "services/gateway" }
+  ]
+}

@@ -1,0 +1,27 @@
+---
+- name: Paquetes base
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, rsync, openssl]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+# get.docker.com soporta releases nuevas de Ubuntu antes que el repositorio apt manual.
+- name: Instalar Docker Engine + plugin compose
+  ansible.builtin.shell: curl -fsSL https://get.docker.com | sh
+  args:
+    creates: /usr/bin/docker
+  become: true
+
+- name: Docker habilitado y en marcha
+  ansible.builtin.systemd_service:
+    name: docker
+    enabled: true
+    state: started
+  become: true
+
+- name: Verificar docker compose
+  ansible.builtin.command: docker compose version
+  become: true
+  changed_when: false

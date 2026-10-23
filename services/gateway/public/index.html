@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pedidos Kafka</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1b1f27; --muted: #667085; --line: #e3e6eb;
+    --accent: #3b5bdb; --accent-ink: #ffffff;
+    --ok: #1f8f4e; --ok-bg: #e4f5ea; --warn: #b26b00; --warn-bg: #fff1d6;
+    --bad: #c92a2a; --bad-bg: #fde8e8; --info: #3b5bdb; --info-bg: #e7ecfd; --idle-bg: #eef0f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12141a; --panel: #1b1f27; --ink: #e8eaf0; --muted: #9aa3b2; --line: #2b313c;
+      --accent: #7c93ff; --accent-ink: #12141a;
+      --ok: #55d68a; --ok-bg: #16301f; --warn: #f0b24a; --warn-bg: #36290f;
+      --bad: #ff8787; --bad-bg: #3a1a1a; --info: #8fa3ff; --info-bg: #1f2745; --idle-bg: #262b35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  .bar { max-width: 1100px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .brand { font-weight: 700; letter-spacing: .2px; }
+  .brand small { font-weight: 500; color: var(--muted); margin-left: 6px; }
+  nav { display: flex; gap: 4px; margin-left: 12px; flex: 1; flex-wrap: wrap; }
+  nav button { background: none; border: 0; padding: 7px 12px; border-radius: 8px; color: var(--muted); cursor: pointer; font: inherit; }
+  nav button.on { background: var(--info-bg); color: var(--accent); font-weight: 600; }
+  .who { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 820px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 16px; }
+  .card h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+  textarea { font-family: ui-monospace, Menlo, monospace; font-size: 12px; min-height: 70px; }
+  button.btn { background: var(--accent); color: var(--accent-ink); border: 0; padding: 9px 14px; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  button.btn.danger { background: var(--bad); color: #fff; }
+  button.btn:disabled { opacity: .5; cursor: default; }
+  button.sm { padding: 5px 9px; font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
+  .row > div { flex: 1; min-width: 0; }
+  .row > .narrow { flex: 0 0 76px; }
+  .row > .price { flex: 0 0 100px; }
+  .row > .x { flex: 0 0 auto; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .chip { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 4px 11px; font-size: 13px; cursor: pointer; }
+  .chip:hover { border-color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr.sel td { background: var(--info-bg); }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--idle-bg); }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+  .muted { color: var(--muted); }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--idle-bg); color: var(--muted); white-space: nowrap; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.bad { background: var(--bad-bg); color: var(--bad); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); }
+  .badge.info { background: var(--info-bg); color: var(--info); }
+  .pulse::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 6px; animation: p 1s infinite; }
+  @keyframes p { 50% { opacity: .25; } }
+  .stepper { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 4px; }
+  .step { border: 1px solid var(--line); border-radius: 10px; padding: 10px; text-align: center; background: var(--bg); }
+  .step b { display: block; font-size: 13px; margin-bottom: 4px; }
+  .step.ok { border-color: var(--ok); } .step.fallo { border-color: var(--bad); }
+  .step.curso { border-color: var(--accent); } .step.comp { border-color: var(--warn); }
+  .tl { list-style: none; margin: 0; padding: 0; }
+  .tl li { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 13.5px; }
+  .tl .t { color: var(--muted); flex: 0 0 66px; font-variant-numeric: tabular-nums; }
+  .kv { display: grid; grid-template-columns: 120px 1fr; gap: 4px 10px; font-size: 14px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; word-break: break-all; }
+  .empty { color: var(--muted); text-align: center; padding: 28px 8px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar select { width: auto; }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; display: none; max-width: 90vw; z-index: 20; }
+  .login { max-width: 460px; margin: 40px auto; }
+  .hint { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand">Pedidos<small>Kafka · saga orquestada</small></div>
+    <nav id="nav" class="hidden">
+      <button data-tab="nuevo">Nuevo pedido</button>
+      <button data-tab="pedidos">Pedidos</button>
+      <button data-tab="operacion" id="navOp" class="hidden">Operación</button>
+    </nav>
+    <div class="who hidden" id="who"><span id="whoTxt"></span><button class="btn ghost sm" id="logout">Salir</button></div>
+  </div>
+</header>
+
+<main>
+  <!-- Acceso -->
+  <section id="vLogin" class="login card">
+    <h2>Acceso</h2>
+    <div id="devBox" class="hidden">
+      <p class="muted" style="margin-top:0">Modo demostración activo en este servidor.</p>
+      <div class="row">
+        <button class="btn" data-dev="cliente" style="flex:1">Entrar como cliente</button>
+        <button class="btn ghost" data-dev="operador" style="flex:1">Entrar como operador</button>
+      </div>
+      <h3>O pega un token</h3>
+    </div>
+    <label for="tokenIn">Token JWT (HS256) con claims <code>sub</code> (uuid) y <code>rol</code></label>
+    <textarea id="tokenIn" spellcheck="false" placeholder="eyJhbGciOi…"></textarea>
+    <div style="margin-top:10px"><button class="btn" id="tokenGo">Entrar con token</button></div>
+    <p class="hint">Genera uno con <code>node scripts/token.mjs [clienteId] [cliente|operador]</code>.</p>
+  </section>
+
+  <!-- Nuevo pedido -->
+  <section id="vNuevo" class="hidden">
+    <div class="grid">
+      <div class="card">
+        <h2>Nuevo pedido</h2>
+        <label>Escenarios de prueba</label>
+        <div class="chips" id="presets"></div>
+        <div id="lineas"></div>
+        <button class="btn ghost sm" id="addLinea">+ Añadir línea</button>
+        <h3>Envío</h3>
+        <div class="row">
+          <div><label for="calle">Dirección</label><input id="calle" value="Gran Vía 1"></div>
+          <div><label for="ciudad">Ciudad</label><input id="ciudad" value="Madrid"></div>
+        </div>
+        <div class="row">
+          <div><label for="pais">País</label>
+            <select id="pais">
+              <option value="ES">España (ES)</option><option value="PT">Portugal (PT)</option>
+              <option value="FR">Francia (FR)</option><option value="DE">Alemania (DE)</option>
+              <option value="JP">Japón (JP) — sin transportista</option>
+            </select></div>
+          <div><label>Total</label><div id="total" style="padding:8px 0;font-weight:700">0,00 €</div></div>
+        </div>
+        <div style="margin-top:10px"><button class="btn" id="enviar">Crear pedido</button></div>
+        <p class="hint">Cada envío usa una <code>Idempotency-Key</code>: si repites la misma, no se duplica el pedido.</p>
+      </div>
+      <div class="card" id="detalleNuevo"><div class="empty">Crea un pedido para seguir su saga en directo.</div></div>
+    </div>
+  </section>
+
+  <!-- Pedidos -->
+  <section id="vPedidos" class="hidden">
+    <div class="grid">
+      <div class="card">
+        <div class="toolbar"><h2 style="margin:0;flex:1">Pedidos</h2><button class="btn ghost sm" id="refrescar">Actualizar</button></div>
+        <div id="listaPedidos"></div>
+      </div>
+      <div class="card" id="detallePedidos"><div class="empty">Selecciona un pedido.</div></div>
+    </div>
+  </section>
+
+  <!-- Operación -->
+  <section id="vOperacion" class="hidden">
+    <div class="grid">
+      <div class="card">
+        <div class="toolbar">
+          <h2 style="margin:0;flex:1">Sagas</h2>
+          <select id="filtroEstado">
+            <option value="">Todas</option><option>RESERVANDO_STOCK</option><option>COBRANDO</option><option>CREANDO_ENVIO</option>
+            <option>COMPENSANDO</option><option>COMPLETADA</option><option>CANCELADA</option><option>FALLIDA_MANUAL</option>
+          </select>
+        </div>
+        <div id="listaSagas"></div>
+      </div>
+      <div class="card" id="detalleOperacion"><div class="empty">Selecciona una saga.</div></div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const eur = (n) => Number(n).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+const hora = (d) => new Date(d).toLocaleTimeString("es-ES");
+const corto = (id) => String(id).slice(0, 8);
+const store = {
+  get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { sessionStorage.setItem(k, v); } catch {} },
+  del(k) { try { sessionStorage.removeItem(k); } catch {} },
+  lget(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  lset(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+
+const PRODUCTOS = [
+  { id: "11111111-1111-4111-8111-111111111111", nombre: "Portátil", precio: 900 },
+  { id: "22222222-2222-4222-8222-222222222222", nombre: "Ratón", precio: 20 },
+  { id: "33333333-3333-4333-8333-333333333333", nombre: "Edición limitada (2 uds)", precio: 50 },
+];
+const PRESETS = [
+  { n: "Camino feliz", l: [[0, 1, 900]], p: "ES" },
+  { n: "Stock insuficiente", l: [[2, 5, 50]], p: "ES" },
+  { n: "Pago rechazado (>5000 €)", l: [[0, 10, 900]], p: "ES" },
+  { n: "Sin transportista", l: [[1, 2, 20]], p: "JP" },
+];
+
+// ---------- sesión y API ----------
+let sesion = null;           // { token, sub, rol }
+let tab = "nuevo";
+let seleccion = {};          // detalle abierto por vista
+let timers = {};
+
+function decodificar(token) {
+  try { return JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); } catch { return null; }
+}
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(toast.h); toast.h = setTimeout(() => (t.style.display = "none"), 4000);
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { authorization: "Bearer " + sesion.token, "content-type": "application/json", ...(opts.headers || {}) } });
+  if (r.status === 401) { salir(); throw new Error("Sesión caducada o token inválido"); }
+  const txt = await r.text(); let body; try { body = JSON.parse(txt); } catch { body = txt; }
+  if (!r.ok) throw new Error((body && body.error) || ("Error " + r.status));
+  return body;
+}
+function entrar(token) {
+  const c = decodificar(token);
+  if (!c || !c.sub) return toast("Token no válido");
+  sesion = { token, sub: c.sub, rol: c.rol === "operador" ? "operador" : "cliente" };
+  store.set("token", token);
+  $("#vLogin").classList.add("hidden");
+  $("#nav").classList.remove("hidden"); $("#who").classList.remove("hidden");
+  $("#navOp").classList.toggle("hidden", sesion.rol !== "operador");
+  $("#whoTxt").textContent = `${sesion.rol} · ${corto(sesion.sub)}`;
+  mostrar("nuevo");
+}
+function salir() {
+  sesion = null; store.del("token"); Object.values(timers).forEach(clearInterval); timers = {};
+  ["vNuevo", "vPedidos", "vOperacion", "nav", "who"].forEach((id) => $("#" + id).classList.add("hidden"));
+  $("#vLogin").classList.remove("hidden");
+}
+function mostrar(t) {
+  tab = t;
+  Object.values(timers).forEach(clearInterval); timers = {};
+  [["nuevo", "vNuevo"], ["pedidos", "vPedidos"], ["operacion", "vOperacion"]].forEach(([k, id]) => $("#" + id).classList.toggle("hidden", k !== t));
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+  if (t === "pedidos") { cargarPedidos(); timers.l = setInterval(cargarPedidos, 3000); if (seleccion.pedidos) abrir(seleccion.pedidos, "#detallePedidos", "pedidos"); }
+  if (t === "operacion") { cargarSagas(); timers.s = setInterval(cargarSagas, 3000); }
+  if (t === "nuevo") actualizarTotal();
+}
+
+// ---------- estado visual ----------
+function badge(estado) {
+  const m = { CONFIRMADO: "ok", COMPLETADA: "ok", CANCELADO: "bad", CANCELADA: "bad", FALLIDA_MANUAL: "bad", COMPENSANDO: "warn", PENDIENTE: "info", RESERVANDO_STOCK: "info", COBRANDO: "info", CREANDO_ENVIO: "info" };
+  const c = m[estado] || "";
+  return `<span class="badge ${c} ${c === "info" || estado === "COMPENSANDO" ? "pulse" : ""}">${esc(estado)}</span>`;
+}
+
+// ---------- nuevo pedido ----------
+let lineas = [];
+function pintarLineas() {
+  $("#lineas").innerHTML = lineas.map((l, i) => `
+    <div class="row">
+      <div><label>${i === 0 ? "Producto" : ""}</label>
+        <select data-i="${i}" data-f="prod">${PRODUCTOS.map((p, k) => `<option value="${k}" ${k === l.prod ? "selected" : ""}>${esc(p.nombre)}</option>`).join("")}</select></div>
+      <div class="narrow"><label>${i === 0 ? "Cant." : ""}</label><input type="number" min="1" step="1" value="${l.cant}" data-i="${i}" data-f="cant"></div>
+      <div class="price"><label>${i === 0 ? "Precio €" : ""}</label><input type="number" min="0" step="0.01" value="${l.precio}" data-i="${i}" data-f="precio"></div>
+      <div class="x"><button class="btn ghost sm" data-del="${i}" ${lineas.length < 2 ? "disabled" : ""} title="Quitar">✕</button></div>
+    </div>`).join("");
+  actualizarTotal();
+}
+function actualizarTotal() { $("#total").textContent = eur(lineas.reduce((s, l) => s + l.cant * l.precio, 0)); }
+function preset(p) { lineas = p.l.map(([prod, cant, precio]) => ({ prod, cant, precio })); $("#pais").value = p.p; pintarLineas(); }
+
+async function crearPedido() {
+  const btn = $("#enviar");
+  if (lineas.some((l) => !(l.cant >= 1) || !(l.precio >= 0))) return toast("Revisa cantidades y precios");
+  const ids = lineas.map((l) => l.prod);
+  if (new Set(ids).size !== ids.length) return toast("No repitas el mismo producto en dos líneas");
+  btn.disabled = true;
+  try {
+    const r = await api("/api/pedidos", {
+      method: "POST",
+      headers: { "idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({
+        lineas: lineas.map((l) => ({ productoId: PRODUCTOS[l.prod].id, cantidad: Number(l.cant), precioUnitario: Number(l.precio) })),
+        direccionEnvio: { calle: $("#calle").value, ciudad: $("#ciudad").value, pais: $("#pais").value },
+      }),
+    });
+    toast("Pedido creado: " + corto(r.pedidoId));
+    seleccion.nuevo = r.pedidoId;
+    abrir(r.pedidoId, "#detalleNuevo", "nuevo");
+  } catch (e) { toast(e.message); } finally { btn.disabled = false; }
+}
+
+// ---------- detalle de pedido (con saga si es operador) ----------
+const PASOS = [["RESERVAR_STOCK", "Reservar stock"], ["COBRAR", "Cobrar"], ["CREAR_ENVIO", "Crear envío"]];
+function estadoPaso(pasos, paso) {
+  const a = pasos.filter((p) => p.paso === paso && p.tipo === "ACCION");
+  const c = pasos.filter((p) => p.paso === paso && p.tipo === "COMPENSACION");
+  if (c.some((p) => p.resultado === "OK")) return ["comp", "↩ compensado"];
+  if (c.length) return ["comp", "compensando…"];
+  if (a.some((p) => p.resultado === "FALLO")) return ["fallo", "✕ fallo"];
+  if (a.some((p) => p.resultado === "OK")) return ["ok", "✓ completado"];
+  if (a.length) return ["curso", "en curso…"];
+  return ["", "pendiente"];
+}
+function pintarDetalle(el, p, saga) {
+  const pasos = saga ? saga.pasos : [];
+  el.innerHTML = `
+    <div class="toolbar"><h2 style="margin:0;flex:1">Pedido <span class="mono">${esc(corto(p.id))}</span></h2>${badge(p.estado)}</div>
+    <dl class="kv">
+      <dt>Id</dt><dd class="mono">${esc(p.id)}</dd>
+      <dt>Total</dt><dd>${eur(p.total)}</dd>
+      <dt>Envío</dt><dd>${esc([p.direccion_envio?.calle, p.direccion_envio?.ciudad, p.direccion_envio?.pais].filter(Boolean).join(", "))}</dd>
+      ${p.motivo_cancelacion ? `<dt>Motivo</dt><dd>${esc(p.motivo_cancelacion)}</dd>` : ""}
+    </dl>
+    <h3>Líneas</h3>
+    <table><tbody>${p.lineas.map((l) => `<tr style="cursor:default"><td>${esc(PRODUCTOS.find((x) => x.id === l.producto_id)?.nombre || corto(l.producto_id))}</td><td>× ${l.cantidad}</td><td style="text-align:right">${eur(l.precio_unitario)}</td></tr>`).join("")}</tbody></table>
+    ${saga ? `
+      <h3>Saga · ${badge(saga.estado)}</h3>
+      <div class="stepper">${PASOS.map(([k, n]) => { const [c, t] = estadoPaso(pasos, k); return `<div class="step ${c}"><b>${n}</b><span class="muted">${t}</span></div>`; }).join("")}</div>
+      <h3>Traza de la saga</h3>
+      <ul class="tl">${pasos.map((s) => `<li><span class="t">${hora(s.fecha)}</span><span>${s.tipo === "COMPENSACION" ? "↩ " : ""}${esc(s.paso)} → ${esc(s.resultado)}${s.detalle?.motivo ? ` <span class="muted">(${esc(s.detalle.motivo)})</span>` : ""}</span></li>`).join("") || '<li class="muted">Sin pasos todavía</li>'}</ul>` : ""}
+    <h3>Historial del pedido</h3>
+    <ul class="tl">${p.historial.map((h) => `<li><span class="t">${hora(h.fecha)}</span><span>${esc(h.estado_anterior || "—")} → <b>${esc(h.estado_nuevo)}</b></span></li>`).join("")}</ul>
+    ${p.estado === "PENDIENTE" ? `<div style="margin-top:14px"><button class="btn danger sm" data-cancelar="${esc(p.id)}">Cancelar pedido</button></div>` : ""}`;
+}
+async function abrir(id, destino, clave) {
+  clearInterval(timers.d);
+  seleccion[clave] = id;
+  const el = $(destino);
+  const cargar = async () => {
+    try {
+      const [p, saga] = await Promise.all([
+        api("/api/pedidos/" + id),
+        sesion.rol === "operador" ? api("/api/sagas/" + id).catch(() => null) : null,
+      ]);
+      pintarDetalle(el, p, saga);
+      if (p.estado !== "PENDIENTE") clearInterval(timers.d);
+      if (clave === "pedidos") marcarFila();
+    } catch (e) { clearInterval(timers.d); el.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+  };
+  await cargar();
+  timers.d = setInterval(cargar, 1200);
+}
+
+// ---------- listas ----------
+function marcarFila() { document.querySelectorAll("#listaPedidos tbody tr").forEach((tr) => tr.classList.toggle("sel", tr.dataset.id === seleccion.pedidos)); }
+async function cargarPedidos() {
+  try {
+    const filas = await api("/api/pedidos");
+    $("#listaPedidos").innerHTML = filas.length
+      ? `<table><thead><tr><th>Id</th><th>Estado</th><th style="text-align:right">Total</th><th>Hora</th></tr></thead><tbody>${filas.map((f) =>
+          `<tr data-id="${esc(f.id)}"><td class="mono">${esc(corto(f.id))}</td><td>${badge(f.estado)}</td><td style="text-align:right">${eur(f.total)}</td><td class="muted">${hora(f.created_at)}</td></tr>`).join("")}</tbody></table>`
+      : '<div class="empty">Aún no hay pedidos.</div>';
+    marcarFila();
+  } catch (e) { toast(e.message); }
+}
+async function cargarSagas() {
+  try {
+    const f = $("#filtroEstado").value;
+    const filas = await api("/api/sagas" + (f ? "?estado=" + encodeURIComponent(f) : ""));
+    $("#listaSagas").innerHTML = filas.length
+      ? `<table><thead><tr><th>Pedido</th><th>Estado</th><th>Int.</th><th>Hora</th></tr></thead><tbody>${filas.map((s) =>
+          `<tr data-pedido="${esc(s.pedido_id)}"><td class="mono">${esc(corto(s.pedido_id))}</td><td>${badge(s.estado)}${s.estado === "FALLIDA_MANUAL" ? ` <button class="btn sm" data-reintentar="${esc(s.saga_id)}">Reintentar</button>` : ""}</td><td>${s.intentos}</td><td class="muted">${hora(s.updated_at)}</td></tr>`).join("")}</tbody></table>`
+      : '<div class="empty">No hay sagas con ese filtro.</div>';
+  } catch (e) { toast(e.message); }
+}
+
+// ---------- eventos ----------
+document.addEventListener("click", async (e) => {
+  const t = e.target;
+  const dev = t.closest("[data-dev]");
+  if (dev) {
+    try {
+      const rol = dev.dataset.dev, k = "clienteDemo";
+      const r = await fetch("/auth/dev", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rol, clienteId: rol === "cliente" ? store.lget(k) : undefined }) });
+      const j = await r.json(); if (!r.ok) throw new Error(j.error);
+      if (rol === "cliente") store.lset(k, j.sub);
+      entrar(j.token);
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const tabBtn = t.closest("nav button"); if (tabBtn) return mostrar(tabBtn.dataset.tab);
+  const pre = t.closest("[data-preset]"); if (pre) return preset(PRESETS[pre.dataset.preset]);
+  const del = t.closest("[data-del]"); if (del && lineas.length > 1) { lineas.splice(Number(del.dataset.del), 1); return pintarLineas(); }
+  const canc = t.closest("[data-cancelar]");
+  if (canc) { try { await api(`/api/pedidos/${canc.dataset.cancelar}/cancelar`, { method: "POST", body: "{}" }); toast("Cancelación solicitada"); } catch (err) { toast(err.message); } return; }
+  const rei = t.closest("[data-reintentar]");
+  if (rei) { e.stopPropagation(); try { await api(`/api/sagas/${rei.dataset.reintentar}/reintentar`, { method: "POST", body: "{}" }); toast("Reintento lanzado"); cargarSagas(); } catch (err) { toast(err.message); } return; }
+  const fp = t.closest("#listaPedidos tbody tr"); if (fp) return abrir(fp.dataset.id, "#detallePedidos", "pedidos");
+  const fs = t.closest("#listaSagas tbody tr"); if (fs) return abrir(fs.dataset.pedido, "#detalleOperacion", "operacion");
+});
+document.addEventListener("input", (e) => {
+  const d = e.target.dataset;
+  if (d && d.f && d.i !== undefined) {
+    const l = lineas[Number(d.i)];
+    if (d.f === "prod") { l.prod = Number(e.target.value); l.precio = PRODUCTOS[l.prod].precio; pintarLineas(); }
+    else { l[d.f] = Number(e.target.value); actualizarTotal(); }
+  }
+});
+$("#addLinea").onclick = () => {
+  const libre = PRODUCTOS.findIndex((_, k) => !lineas.some((l) => l.prod === k));
+  if (libre < 0) return toast("Ya has añadido todos los productos");
+  lineas.push({ prod: libre, cant: 1, precio: PRODUCTOS[libre].precio }); pintarLineas();
+};
+$("#enviar").onclick = crearPedido;
+$("#refrescar").onclick = cargarPedidos;
+$("#filtroEstado").onchange = cargarSagas;
+$("#logout").onclick = salir;
+$("#tokenGo").onclick = () => entrar($("#tokenIn").value.trim());
+
+// ---------- arranque ----------
+$("#presets").innerHTML = PRESETS.map((p, i) => `<button class="chip" data-preset="${i}">${esc(p.n)}</button>`).join("");
+preset(PRESETS[0]);
+fetch("/auth/config").then((r) => r.json()).then((c) => { if (c.devLogin) $("#devBox").classList.remove("hidden"); }).catch(() => {});
+const guardado = store.get("token"); if (guardado) entrar(guardado);
+</script>
+</body>
+</html>

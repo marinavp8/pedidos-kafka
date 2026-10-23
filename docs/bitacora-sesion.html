@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bitácora pedidos-kafka</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: cuaderno de laboratorio. Una columna de lectura con un margen izquierdo de fase (número + marca de tiempo lógica). */
+  :root {
+    --bg: #f3f5f7; --panel: #ffffff; --ink: #172026; --muted: #5d6b76; --line: #dde3e8;
+    --accent: #0e6b73; --accent-soft: #dff1f2;
+    --ok: #17794a; --ok-soft: #dff3e8; --warn: #9a5b00; --warn-soft: #fdf0d2; --bad: #b42323; --bad-soft: #fbe5e5;
+    --code-bg: #e9eef1;
+    --f-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1519; --panel: #162026; --ink: #e5ecf0; --muted: #94a5b0; --line: #26343c;
+      --accent: #5cc4cc; --accent-soft: #14343a;
+      --ok: #62d596; --ok-soft: #12301f; --warn: #f0b24a; --warn-soft: #36290f; --bad: #ff8d8d; --bad-soft: #3a1b1b;
+      --code-bg: #1d2a31; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1519; --panel: #162026; --ink: #e5ecf0; --muted: #94a5b0; --line: #26343c;
+    --accent: #5cc4cc; --accent-soft: #14343a;
+    --ok: #62d596; --ok-soft: #12301f; --warn: #f0b24a; --warn-soft: #36290f; --bad: #ff8d8d; --bad-soft: #3a1b1b;
+    --code-bg: #1d2a31; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--f-body); padding-block: 28px 64px;
+         padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .wrap { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 36px; }
+  h1, h2, h3 { text-wrap: balance; line-height: 1.2; margin: 0; }
+  h1 { font-size: clamp(28px, 5vw, 40px); font-weight: 700; letter-spacing: -.02em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 600; margin-bottom: 14px; }
+  h3 { font-size: 17px; font-weight: 600; }
+  p { margin: 0; }
+  code { font-family: var(--f-mono); font-size: .86em; background: var(--code-bg); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+  a { color: var(--accent); }
+  .lead { color: var(--muted); max-width: 62ch; margin-top: 10px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 16px; font-family: var(--f-mono); font-size: 12.5px; color: var(--muted); }
+  .meta b { color: var(--ink); font-weight: 500; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .tile .n { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .tile .l { font-size: 13px; color: var(--muted); }
+
+  .phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .phase { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 0 14px; }
+  .phase .rail { display: flex; flex-direction: column; align-items: center; }
+  .phase .num { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--bg); display: grid; place-items: center;
+                font-family: var(--f-mono); font-weight: 500; font-size: 14px; flex: none; }
+  .phase .line { flex: 1; width: 2px; background: var(--line); margin: 4px 0; }
+  .phase:last-child .line { display: none; }
+  .phase .body { padding-bottom: 28px; min-width: 0; }
+  .phase .body > p { margin-top: 6px; max-width: 68ch; }
+  .phase ul { margin: 10px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; max-width: 72ch; }
+  .tag { display: inline-block; font-family: var(--f-mono); font-size: 11.5px; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin-left: 8px; vertical-align: 2px; white-space: nowrap; }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 560px; }
+  th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.k { font-weight: 600; white-space: nowrap; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.bad { background: var(--bad-soft); color: var(--bad); }
+
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; min-width: 0; }
+  .box h3 { margin-bottom: 8px; }
+  .box ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+  .box.pend { border-color: var(--warn); }
+  footer { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Bitácora de la sesión pedidos-kafka</h1>
+    <p class="lead">Del documento de Kafka en microservicios a un sistema de pedidos funcionando, desplegable con Ansible y publicado en un repositorio Git. Qué se hizo, en qué orden, qué falló y qué queda sin probar.</p>
+    <div class="meta">
+      <span>fecha <b>2026-10-22</b></span>
+      <span>autor <b>José Viejo</b></span>
+    </div>
+  </header>
+
+  <section aria-label="Resumen">
+    <div class="tiles">
+      <div class="tile"><div class="n">3</div><div class="l">documentos de diseño</div></div>
+      <div class="tile"><div class="n">7</div><div class="l">servicios (6 de dominio + gateway)</div></div>
+      <div class="tile"><div class="n">6</div><div class="l">bases PostgreSQL, una por servicio</div></div>
+      <div class="tile"><div class="n">65</div><div class="l">ficheros en el primer commit</div></div>
+      <div class="tile"><div class="n">7</div><div class="l">incidencias resueltas</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cronología</h2>
+    <ol class="phases">
+      <li class="phase">
+        <div class="rail"><div class="num">1</div><div class="line"></div></div>
+        <div class="body">
+          <h3>Lectura del material de origen</h3>
+          <p>Se leyó <code>~/Downloads/kafka-en-microservicios.html</code>, una guía interactiva con cuatro laboratorios: clúster y réplicas, topics y particiones, microservicios con orquestador y sagas con compensación.</p>
+          <ul>
+            <li>Conceptos que fijan el diseño: factor de replicación 3, <code>min.insync.replicas=2</code>, <code>acks=all</code>, clave por <code>pedidoId</code>.</li>
+            <li>Patrones: transactional outbox, idempotencia por <code>sagaId</code> y paso, compensaciones en orden inverso, estado de la saga persistido.</li>
+          </ul>
+        </div>
+      </li>
+      <li class="phase">
+        <div class="rail"><div class="num">2</div><div class="line"></div></div>
+        <div class="body">
+          <h3>Documentación de diseño <span class="tag">docs/</span></h3>
+          <p>Tres documentos en español, con PostgreSQL por microservicio como condición de partida.</p>
+          <ul>
+            <li><code>01-SRS.md</code>: requisitos funcionales y no funcionales, reglas de arquitectura obligatorias y 11 escenarios de aceptación.</li>
+            <li><code>02-arquitectura.md</code>: decisiones (ADR), diagramas Mermaid, topics, máquina de estados de la saga, outbox y análisis de fallos.</li>
+            <li><code>03-modelo-de-datos.md</code>: DDL completo de las seis bases, con tablas comunes <code>outbox</code> y <code>processed_message</code>.</li>
+          </ul>
+        </div>
+      </li>
+      <li class="phase">
+        <div class="rail"><div class="num">3</div><div class="line"></div></div>
+        <div class="body">
+          <h3>Construcción del proyecto <span class="tag">pedidos-kafka/</span></h3>
+          <p>Monorepo en Node.js y TypeScript con una librería común y un servicio por contenedor, todos desde un único <code>Dockerfile</code> parametrizado.</p>
+          <ul>
+            <li><code>libs/common</code>: outbox con relay, consumidor idempotente con DLQ, migraciones con bloqueo, arranque común.</li>
+            <li>Servicios: pedidos, orquestador, inventario, pagos, envíos, notificaciones y gateway con JWT.</li>
+            <li>Migraciones SQL por servicio y datos de demostración opcionales (<code>SEED_DEMO_DATA</code>).</li>
+          </ul>
+        </div>
+      </li>
+      <li class="phase">
+        <div class="rail"><div class="num">4</div><div class="line"></div></div>
+        <div class="body">
+          <h3>Despliegue con Ansible <span class="tag">ansible/</span></h3>
+          <p>Roles <code>docker</code> y <code>stack</code>: instalan Docker, sincronizan el código, generan los secretos en el servidor y renderizan el <code>compose.yml</code> con Kafka KRaft ×3, PostgreSQL, servicios y Traefik con TLS.</p>
+          <ul>
+            <li>Los secretos se crean una sola vez con <code>openssl rand</code> en un <code>.env</code> con permisos 0600.</li>
+            <li>Todo se parametriza en <code>group_vars/all.yml</code>: número de brokers, réplicas del orquestador, Traefik, datos de demo.</li>
+          </ul>
+        </div>
+      </li>
+      <li class="phase">
+        <div class="rail"><div class="num">5</div><div class="line"></div></div>
+        <div class="body">
+          <h3>Pruebas extremo a extremo</h3>
+          <p>Primero el entorno de desarrollo y después la plantilla de producción renderizada y levantada en local con 3 brokers y 2 réplicas del orquestador. Los resultados están en la tabla de verificación.</p>
+        </div>
+      </li>
+      <li class="phase">
+        <div class="rail"><div class="num">6</div><div class="line"></div></div>
+        <div class="body">
+          <h3>Fallo de arranque y su corrección</h3>
+          <p>Al lanzar el smoke test justo después de <code>up -d</code>, el gateway devolvió 502: Pedidos tardó unos 33 s en estar listo. Se añadieron healthchecks y el smoke test ahora espera a que el sistema responda.</p>
+        </div>
+      </li>
+      <li class="phase">
+        <div class="rail"><div class="num">7</div><div class="line"></div></div>
+        <div class="body">
+          <h3>Web de interacción <span class="tag">services/gateway/public</span></h3>
+          <p>Una página única servida por el gateway: crear pedidos con escenarios de prueba, seguir la saga en directo y, para el operador, ver sagas, compensaciones y reintentar las bloqueadas.</p>
+          <ul>
+            <li>Backend: nuevo <code>GET /api/pedidos</code> y un login de demostración (<code>/auth/dev</code>) apagado por defecto en servidor.</li>
+            <li>Probada en un navegador real con el escenario «sin transportista».</li>
+          </ul>
+        </div>
+      </li>
+      <li class="phase">
+        <div class="rail"><div class="num">8</div><div class="line"></div></div>
+        <div class="body">
+          <h3>Publicación del repositorio</h3>
+          <p>Rama <code>main</code>. Se revisó que no entraran secretos ni <code>node_modules</code>.</p>
+        </div>
+      </li>
+      <li class="phase">
+        <div class="rail"><div class="num">9</div></div>
+        <div class="body">
+          <h3>Esta bitácora</h3>
+          <p>Resumen de la sesión como página para consultar y compartir.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Verificación</h2>
+    <div class="panel scroll">
+      <table>
+        <thead><tr><th>Comprobación</th><th>Resultado</th><th>Detalle</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Compilación TypeScript</td><td><span class="pill ok">Correcto</span></td><td><code>tsc -b</code> sin errores en los 8 proyectos.</td></tr>
+          <tr><td class="k">Smoke test, entorno dev</td><td><span class="pill ok">Correcto</span></td><td>Camino feliz, stock insuficiente, pago rechazado, sin transportista, <code>Idempotency-Key</code>, 401 y 403.</td></tr>
+          <tr><td class="k">Stack de producción en local</td><td><span class="pill ok">Correcto</span></td><td>3 brokers, RF=3, <code>min.insync.replicas=2</code>, orquestador ×2; mismo smoke test en verde.</td></tr>
+          <tr><td class="k">Caída de un broker</td><td><span class="pill ok">Correcto</span></td><td>Con <code>kafka-2</code> parado, el flujo siguió funcionando.</td></tr>
+          <tr><td class="k">Ansible: sintaxis</td><td><span class="pill ok">Correcto</span></td><td><code>--syntax-check</code> del playbook.</td></tr>
+          <tr><td class="k">Ansible: secretos</td><td><span class="pill ok">Correcto</span></td><td>Tarea de <code>.env</code> idempotente, permisos 600, cluster id de 22 caracteres.</td></tr>
+          <tr><td class="k">Ansible: plantilla compose</td><td><span class="pill ok">Correcto</span></td><td>Renderizada y validada con <code>docker compose config</code>.</td></tr>
+          <tr><td class="k">Web en navegador</td><td><span class="pill warn">Parcial</span></td><td>Login de operador, creación de pedido y detalle de saga. Sin probar las pestañas Pedidos y Operación ni el rol cliente.</td></tr>
+          <tr><td class="k">Playbook contra un VPS real</td><td><span class="pill bad">Sin probar</span></td><td>Falta rsync al servidor, instalación de Docker y certificado de Traefik.</td></tr>
+          <tr><td class="k">Recuperación y errores de la saga</td><td><span class="pill bad">Sin probar</span></td><td>Caída del orquestador a mitad de saga, timeouts con reintentos, DLQ y cancelación por el cliente no se ejercitaron.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Incidencias</h2>
+    <div class="panel scroll">
+      <table>
+        <thead><tr><th>Problema</th><th>Causa</th><th>Solución</th></tr></thead>
+        <tbody>
+          <tr><td class="k">PostgreSQL salía con código 126</td><td>El script de inicio usaba <code>/bin/bash</code>, que no existe en la imagen Alpine.</td><td>Reescrito en <code>sh</code> estándar y marcado como ejecutable.</td></tr>
+          <tr><td class="k">Puerto 8080 ocupado</td><td>El contenedor <code>academy-phpmyadmin</code> ya lo usaba.</td><td>El gateway de desarrollo pasó al 18080. No se tocó el otro contenedor.</td></tr>
+          <tr><td class="k">Orden de la outbox</td><td><code>created_at</code> es igual para las filas de una misma transacción.</td><td>Columna <code>seq</code> autoincremental para ordenar; modelo de datos actualizado.</td></tr>
+          <tr><td class="k">Traefik en la prueba local</td><td>Una variable booleana pasada por línea de comandos llega como texto y cuenta como verdadera.</td><td>En la prueba se usó JSON. En el uso normal las variables son booleanos de YAML.</td></tr>
+          <tr><td class="k">502 tras <code>up -d</code></td><td>El gateway arranca antes que Pedidos y la primera petición llegó demasiado pronto.</td><td>Healthchecks en el compose de desarrollo y espera de disponibilidad en el smoke test.</td></tr>
+          <tr><td class="k">Comando desde otra carpeta</td><td><code>compose.dev.yml</code> está dentro de <code>pedidos-kafka/</code>.</td><td>Ejecutarlo desde esa carpeta.</td></tr>
+          <tr><td class="k">Remoto de Git ausente</td><td><code>glab repo create</code> creó el proyecto pero no añadió <code>origin</code>.</td><td>Remoto añadido a mano y push realizado.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Decisiones y límites</h2>
+    <div class="cols">
+      <div class="box">
+        <h3>Decisiones tomadas</h3>
+        <ul>
+          <li>Node.js y TypeScript en lugar de Java; la arquitectura no depende del lenguaje.</li>
+          <li>Relay de la outbox como poller con <code>SKIP LOCKED</code>, en lugar de Debezium.</li>
+          <li>Mensajes en JSON, sin Schema Registry.</li>
+          <li>Kafka sin TLS ni SASL, solo en la red interna de Docker.</li>
+          <li>Un repositorio con los documentos dentro (<code>docs/</code>).</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Simulado</h3>
+        <ul>
+          <li>Pasarela de pago: rechaza importes superiores a 5000.</li>
+          <li>Notificaciones: se escriben en el log.</li>
+          <li>Login de demostración: solo en desarrollo; en servidor requiere <code>demo_login: true</code>.</li>
+        </ul>
+      </div>
+      <div class="box pend">
+        <h3>Siguientes pasos sugeridos</h3>
+        <ul>
+          <li>Ejecutar el playbook contra el VPS. Si otro servicio ya usa el 80 y el 443 en el servidor, usar <code>traefik_enabled: false</code>.</li>
+          <li>Probar caída del orquestador, timeouts, DLQ y cancelación.</li>
+          <li>Sustituir pasarela y notificaciones por proveedores reales y añadir un proveedor de identidad.</li>
+          <li>Añadir <code>.gitlab-ci.yml</code> con build y smoke test.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>Comandos útiles: <code>docker compose -f compose.dev.yml up -d --build</code> y <code>node scripts/smoke.mjs</code> desde <code>pedidos-kafka/</code>; despliegue con <code>ansible-playbook site.yml</code> desde <code>ansible/</code>.</footer>
+</div>
+</body>
+</html>
